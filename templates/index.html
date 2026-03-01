@@ -1349,33 +1349,39 @@ async function loadCurrentPath() {
     try {
         const data = await App.api('/api/current-path');
         document.getElementById('current-path').value = data.path || '';
-        BROWSE_PATH = data.path || 'Z:\\各客排期';
+        BROWSE_PATH = data.path || '';
     } catch(e) {}
 }
 loadCurrentPath();
 
 function openPathBrowser() {
     if (!pathModal) pathModal = new bootstrap.Modal(document.getElementById('pathModal'));
-    browseTo(BROWSE_PATH || 'Z:\\各客排期');
+    // 从当前已保存路径打开；若路径为空则从驱动器列表开始
+    browseTo(BROWSE_PATH || '');
     pathModal.show();
 }
 
 async function browseTo(path) {
-    BROWSE_PATH = path;
-    document.getElementById('browse-current').value = path;
+    BROWSE_PATH = path || '';
+    document.getElementById('browse-current').value = BROWSE_PATH;
     const el = document.getElementById('browse-list');
     el.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div> 加载中...</div>';
     try {
-        const data = await App.api('/api/browse-dirs', { method: 'POST', body: { path } });
+        const data = await App.api('/api/browse-dirs', { method: 'POST', body: { path: BROWSE_PATH } });
         let html = '';
+        const isDrives = data.is_drives;
         data.dirs.forEach(d => {
-            html += `<div class="browse-item dir" onclick="browseTo('${d.path.replace(/\\/g, '\\\\')}')">
-                <i class="bi bi-folder-fill text-warning me-2"></i>
+            const escapedPath = d.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const icon = isDrives
+                ? '<i class="bi bi-hdd-fill text-secondary me-2"></i>'
+                : '<i class="bi bi-folder-fill text-warning me-2"></i>';
+            html += `<div class="browse-item dir" onclick="browseTo('${escapedPath}')">
+                ${icon}
                 <span>${d.name}</span>
                 <i class="bi bi-chevron-right ms-auto text-muted"></i>
             </div>`;
         });
-        if (data.files.length > 0) {
+        if (!isDrives && data.files.length > 0) {
             html += `<div class="browse-divider"><span>排期文件 (${data.files.length}个)</span></div>`;
             data.files.slice(0, 20).forEach(f => {
                 html += `<div class="browse-item file">
@@ -1390,15 +1396,26 @@ async function browseTo(path) {
         if (!html) html = '<div class="text-center py-3 text-muted">此目录为空</div>';
         el.innerHTML = html;
     } catch(e) {
-        el.innerHTML = `<div class="text-center py-3 text-danger">${e.message}</div>`;
+        el.innerHTML = `<div class="text-center py-3 text-danger">${e.message || '加载失败'}</div>`;
     }
 }
 
 function browseUp() {
-    const parts = BROWSE_PATH.replace(/\\$/, '').split('\\');
+    if (!BROWSE_PATH) return;
+    const cleaned = BROWSE_PATH.replace(/[/\\]+$/, '');
+    // 如果已是驱动器根目录（如 C:），返回驱动器列表
+    if (/^[A-Za-z]:$/.test(cleaned)) {
+        browseTo('');
+        return;
+    }
+    const sep = BROWSE_PATH.includes('\\') ? '\\' : '/';
+    const parts = cleaned.split(sep);
     if (parts.length > 1) {
         parts.pop();
-        browseTo(parts.join('\\'));
+        const up = parts.join(sep);
+        browseTo(up || '');
+    } else {
+        browseTo('');
     }
 }
 

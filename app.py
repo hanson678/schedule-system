@@ -562,10 +562,21 @@ def open_folder():
 
 @app.route('/api/browse-dirs', methods=['POST'])
 def browse_dirs():
-    """浏览目录，返回子目录和xlsx文件列表"""
-    path = request.json.get('path', r'Z:\各客排期')
-    if not os.path.isdir(path):
-        return jsonify({'error': f'路径不存在: {path}', 'dirs': [], 'files': []}), 400
+    """浏览目录，返回子目录和xlsx文件列表；path为空或不存在时列出所有驱动器"""
+    import string as _str
+    path = (request.json.get('path', '') or '').strip()
+
+    # 路径为空或不存在 → 列出所有可用驱动器（Windows）
+    if not path or not os.path.isdir(path):
+        if os.name == 'nt':
+            drives = []
+            for letter in _str.ascii_uppercase:
+                drive = f'{letter}:\\'
+                if os.path.exists(drive):
+                    drives.append({'name': f'{letter}: 盘', 'path': drive})
+            return jsonify({'current': '', 'parent': '', 'dirs': drives, 'files': [], 'is_drives': True})
+        path = '/'
+
     dirs, files = [], []
     try:
         for item in sorted(os.listdir(path)):
@@ -576,7 +587,9 @@ def browse_dirs():
                 files.append({'name': item, 'path': fp})
     except PermissionError:
         return jsonify({'error': '无权限访问', 'dirs': [], 'files': []}), 403
-    parent = os.path.dirname(path) if path != os.path.splitdrive(path)[0] + '\\' else ''
+    # 到达驱动器根目录时 parent 为空，前端可据此返回驱动器列表
+    drive_root = os.path.splitdrive(path)[0] + '\\'
+    parent = '' if path.rstrip('\\') == drive_root.rstrip('\\') else os.path.dirname(path.rstrip('\\'))
     return jsonify({'current': path, 'parent': parent, 'dirs': dirs, 'files': files})
 
 
