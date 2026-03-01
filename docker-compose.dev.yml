@@ -1,0 +1,38 @@
+# ============================================================
+# 排期录入系统 - 本地开发环境 Docker Compose
+# 用法: docker compose -f docker-compose.dev.yml up
+# ============================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: schedule-dev
+    ports:
+      - "5000:5000"
+    environment:
+      - CONTAINER_MODE=1
+      - Z_DRIVE_PATH=/mnt/schedules
+      - APP_PORT=5000
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - TZ=Asia/Shanghai
+    volumes:
+      # 挂载本地代码（hot reload）
+      - ./app.py:/app/app.py
+      - ./excel_handler.py:/app/excel_handler.py
+      - ./excel_po_parser.py:/app/excel_po_parser.py
+      - ./pdf_parser.py:/app/pdf_parser.py
+      - ./email_handler.py:/app/email_handler.py
+      - ./templates:/app/templates
+      - ./static:/app/static
+      # 本地数据目录
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      # 排期文件目录（开发环境用 bind mount）
+      - ${LOCAL_SCHEDULE_PATH:-./test_schedules}:/mnt/schedules
+    # 开发模式用 Flask 内置服务器（支持 hot reload）
+    command: >
+      python -u app.py
+    restart: unless-stopped

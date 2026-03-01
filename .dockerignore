@@ -1,0 +1,58 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+dist
+build
+*.egg
+
+# 虚拟环境
+venv
+.venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker 自身
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# 敏感文件
+.env
+.env.*
+!.env.production.example
+
+# 数据文件（通过 volume 挂载，不打包进镜像）
+data/ops.log
+data/operations.log
+data/history.json
+data/issues.json
+data/pending_retries.json
+data/undo_history.json
+uploads/
+
+# Windows 启动脚本（容器不需要）
+*.bat
+*.vbs
+
+# 文档和脚本
+scripts/
+nginx/
+deploy.sh
+*.md

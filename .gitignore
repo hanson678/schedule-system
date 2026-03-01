@@ -1,0 +1,29 @@
+# 临时/上传文件
+uploads/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 运行数据（不上传本地历史记录）
+data/ops.log
+data/issues.json
+data/undo_history.json
+data/scheduled_retries.json
+data/sku_mapping_cache.json
+
+# 保留data目录结构但不上传数据文件
+!data/.gitkeep
+
+# 备份/撤销目录
+data/undo_backup/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp

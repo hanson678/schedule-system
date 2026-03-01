@@ -1,0 +1,4 @@
+flask>=3.0
+openpyxl>=3.1
+pdfplumber>=0.10
+apscheduler>=3.10

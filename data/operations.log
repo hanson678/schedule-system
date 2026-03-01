@@ -1,0 +1,103 @@
+2026-02-25 17:48:52,841 [INFO] Scheduler started
+2026-02-25 17:48:52,902 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://26.26.26.1:5000
+2026-02-25 17:48:52,903 [INFO] [33mPress CTRL+C to quit[0m
+2026-02-25 17:48:52,904 [INFO]  * Restarting with stat
+2026-02-25 17:48:53,443 [INFO] Scheduler started
+2026-02-25 17:48:53,457 [WARNING]  * Debugger is active!
+2026-02-25 17:48:53,460 [INFO]  * Debugger PIN: 109-964-308
+2026-02-25 17:48:57,491 [INFO] Scheduler started
+2026-02-25 17:48:57,542 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://26.26.26.1:5000
+2026-02-25 17:48:57,546 [INFO] [33mPress CTRL+C to quit[0m
+2026-02-25 17:48:57,547 [INFO]  * Restarting with stat
+2026-02-25 17:48:58,048 [INFO] Scheduler started
+2026-02-25 17:48:58,062 [WARNING]  * Debugger is active!
+2026-02-25 17:48:58,065 [INFO]  * Debugger PIN: 109-964-308
+2026-02-25 17:49:00,330 [INFO] 127.0.0.1 - - [25/Feb/2026 17:49:00] "GET / HTTP/1.1" 200 -
+2026-02-25 17:49:08,007 [INFO] 127.0.0.1 - - [25/Feb/2026 17:49:08] "GET /api/schedule-files HTTP/1.1" 200 -
+2026-02-25 17:52:58,086 [INFO] 127.0.0.1 - - [25/Feb/2026 17:52:58] "GET / HTTP/1.1" 200 -
+2026-02-25 17:52:58,114 [INFO] 127.0.0.1 - - [25/Feb/2026 17:52:58] "GET /static/css/style.css HTTP/1.1" 200 -
+2026-02-25 17:52:58,345 [INFO] 127.0.0.1 - - [25/Feb/2026 17:52:58] "GET /static/js/app.js HTTP/1.1" 200 -
+2026-02-25 17:52:59,200 [INFO] 127.0.0.1 - - [25/Feb/2026 17:52:59] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-02-26 08:53:23,918 [INFO] Scheduler started
+2026-02-26 08:53:23,987 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://26.26.26.1:5000
+2026-02-26 08:53:23,987 [INFO] [33mPress CTRL+C to quit[0m
+2026-02-26 08:53:23,989 [INFO]  * Restarting with stat
+2026-02-26 08:53:24,488 [INFO] Scheduler started
+2026-02-26 08:53:24,501 [WARNING]  * Debugger is active!
+2026-02-26 08:53:24,505 [INFO]  * Debugger PIN: 109-964-308
+2026-02-26 08:53:35,007 [INFO] 127.0.0.1 - - [26/Feb/2026 08:53:35] "GET / HTTP/1.1" 200 -
+2026-02-26 08:53:35,015 [INFO] 127.0.0.1 - - [26/Feb/2026 08:53:35] "GET /static/css/style.css HTTP/1.1" 200 -
+2026-02-26 08:53:35,256 [INFO] 127.0.0.1 - - [26/Feb/2026 08:53:35] "GET /static/js/app.js HTTP/1.1" 200 -
+2026-02-26 08:53:36,123 [INFO] 127.0.0.1 - - [26/Feb/2026 08:53:36] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-02-26 09:23:23,675 [INFO] Scheduler started
+2026-02-26 09:23:23,734 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://26.26.26.1:5000
+2026-02-26 09:23:23,735 [INFO] [33mPress CTRL+C to quit[0m
+2026-02-26 09:23:23,740 [INFO]  * Restarting with stat
+2026-02-26 09:23:24,246 [INFO] Scheduler started
+2026-02-26 09:23:24,260 [WARNING]  * Debugger is active!
+2026-02-26 09:23:24,264 [INFO]  * Debugger PIN: 679-847-911
+2026-02-26 09:23:35,317 [INFO] Scheduler started
+2026-02-26 09:23:35,367 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://26.26.26.1:5000
+2026-02-26 09:23:35,367 [INFO] [33mPress CTRL+C to quit[0m
+2026-02-26 09:23:35,368 [INFO]  * Restarting with stat
+2026-02-26 09:23:35,871 [INFO] Scheduler started
+2026-02-26 09:23:35,884 [WARNING]  * Debugger is active!
+2026-02-26 09:23:35,887 [INFO]  * Debugger PIN: 679-847-911
+2026-02-26 09:23:49,537 [INFO] 127.0.0.1 - - [26/Feb/2026 09:23:49] "GET / HTTP/1.1" 200 -
+2026-02-26 09:23:49,573 [INFO] 127.0.0.1 - - [26/Feb/2026 09:23:49] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-02-26 09:23:49,782 [INFO] 127.0.0.1 - - [26/Feb/2026 09:23:49] "[36mGET /static/js/app.js HTTP/1.1[0m" 304 -
+2026-02-26 09:23:50,120 [INFO] 127.0.0.1 - - [26/Feb/2026 09:23:50] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-02-26 09:23:58,978 [INFO] 127.0.0.1 - - [26/Feb/2026 09:23:58] "GET /new-order HTTP/1.1" 200 -
+2026-02-26 09:23:59,081 [INFO] 127.0.0.1 - - [26/Feb/2026 09:23:59] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-02-26 09:23:59,236 [INFO] 127.0.0.1 - - [26/Feb/2026 09:23:59] "[36mGET /static/js/app.js HTTP/1.1[0m" 304 -
+2026-02-26 09:24:00,371 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:00] "GET /api/schedule-files HTTP/1.1" 200 -
+2026-02-26 09:24:13,418 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:13] "GET /settings HTTP/1.1" 200 -
+2026-02-26 09:24:13,724 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:13] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-02-26 09:24:13,740 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:13] "[36mGET /static/js/app.js HTTP/1.1[0m" 304 -
+2026-02-26 09:24:14,063 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:14] "GET /api/schedule HTTP/1.1" 200 -
+2026-02-26 09:24:18,430 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:18] "GET / HTTP/1.1" 200 -
+2026-02-26 09:24:18,745 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:18] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-02-26 09:24:18,755 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:18] "[36mGET /static/js/app.js HTTP/1.1[0m" 304 -
+2026-02-26 09:24:59,069 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:59] "GET /new-order HTTP/1.1" 200 -
+2026-02-26 09:24:59,163 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:59] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-02-26 09:24:59,324 [INFO] 127.0.0.1 - - [26/Feb/2026 09:24:59] "[36mGET /static/js/app.js HTTP/1.1[0m" 304 -
+2026-02-26 09:25:00,357 [INFO] 127.0.0.1 - - [26/Feb/2026 09:25:00] "GET /api/schedule-files HTTP/1.1" 200 -
+2026-02-26 09:28:52,045 [INFO] 127.0.0.1 - - [26/Feb/2026 09:28:52] "POST /api/parse-pdf HTTP/1.1" 200 -
+2026-02-26 09:29:14,844 [INFO] 127.0.0.1 - - [26/Feb/2026 09:29:14] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-02-26 09:29:24,007 [INFO] 127.0.0.1 - - [26/Feb/2026 09:29:24] "POST /api/parse-pdf HTTP/1.1" 200 -
+2026-02-26 09:30:24,752 [INFO] 127.0.0.1 - - [26/Feb/2026 09:30:24] "POST /api/parse-pdf HTTP/1.1" 200 -
+2026-02-26 09:31:21,238 [INFO] 127.0.0.1 - - [26/Feb/2026 09:31:21] "GET / HTTP/1.1" 200 -
+2026-02-26 09:31:21,552 [INFO] 127.0.0.1 - - [26/Feb/2026 09:31:21] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-02-26 09:31:21,553 [INFO] 127.0.0.1 - - [26/Feb/2026 09:31:21] "[36mGET /static/js/app.js HTTP/1.1[0m" 304 -
+2026-02-26 09:34:25,289 [INFO] 127.0.0.1 - - [26/Feb/2026 09:34:25] "GET /new-order HTTP/1.1" 200 -
+2026-02-26 09:34:25,372 [INFO] 127.0.0.1 - - [26/Feb/2026 09:34:25] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-02-26 09:34:25,551 [INFO] 127.0.0.1 - - [26/Feb/2026 09:34:25] "[36mGET /static/js/app.js HTTP/1.1[0m" 304 -
+2026-02-26 09:34:26,792 [INFO] 127.0.0.1 - - [26/Feb/2026 09:34:26] "GET /api/schedule-files HTTP/1.1" 200 -
+2026-02-26 09:36:47,060 [INFO] 127.0.0.1 - - [26/Feb/2026 09:36:47] "POST /api/parse-pdf HTTP/1.1" 200 -
+2026-02-26 09:52:48,552 [INFO]  * Detected change in 'C:\\Users\\Administrator\\Desktop\\排期系统\\pdf_parser.py', reloading
+2026-02-26 09:52:48,668 [INFO]  * Restarting with stat
+2026-02-26 09:52:49,289 [INFO] Scheduler started
+2026-02-26 09:52:49,303 [WARNING]  * Debugger is active!
+2026-02-26 09:52:49,306 [INFO]  * Debugger PIN: 679-847-911
+2026-02-26 09:55:03,790 [INFO]  * Detected change in 'C:\\Users\\Administrator\\Desktop\\排期系统\\excel_handler.py', reloading
+2026-02-26 09:55:03,838 [INFO]  * Restarting with stat
+2026-02-26 09:55:04,365 [INFO] Scheduler started
+2026-02-26 09:55:04,379 [WARNING]  * Debugger is active!
+2026-02-26 09:55:04,381 [INFO]  * Debugger PIN: 679-847-911
+2026-02-26 09:55:46,526 [INFO]  * Detected change in 'C:\\Users\\Administrator\\Desktop\\排期系统\\app.py', reloading
+2026-02-26 09:55:46,575 [INFO]  * Restarting with stat

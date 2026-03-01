@@ -1,0 +1,1903 @@
+{% extends "base.html" %}
+{% block title %}首页{% endblock %}
+
+{% block content %}
+<!-- 动态标语横幅 -->
+<div class="slogan-banner fade-in">
+    <div class="slogan-bg-anim"></div>
+    <div class="slogan-particles">
+        <span class="particle p1">&#x1F9F8;</span>
+        <span class="particle p2">&#x1F680;</span>
+        <span class="particle p3">&#x1F916;</span>
+        <span class="particle p4">&#x2B50;</span>
+        <span class="particle p5">&#x1F3AF;</span>
+    </div>
+    <div class="slogan-content">
+        <div class="slogan-greeting" id="slogan-greeting"></div>
+        <div class="slogan-text" id="slogan-text"></div>
+        <div class="slogan-sub">华登玩具集团 &middot; 智能排期系统 v4</div>
+    </div>
+</div>
+
+<!-- 仪表盘统计 -->
+<div class="row g-3 mb-3 fade-in" id="dashboard-row">
+    <div class="col">
+        <div class="stat-card blue">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="stat-num" id="d-today">-</div>
+                    <div class="stat-label">今日处理</div>
+                </div>
+                <div class="stat-icon blue"><i class="bi bi-lightning-charge"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card green">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="stat-num" id="d-new">-</div>
+                    <div class="stat-label">新增录入</div>
+                </div>
+                <div class="stat-icon green"><i class="bi bi-plus-circle"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card orange">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="stat-num" id="d-mod">-</div>
+                    <div class="stat-label">修改单</div>
+                </div>
+                <div class="stat-icon orange"><i class="bi bi-pencil-square"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card red">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="stat-num" id="d-can">-</div>
+                    <div class="stat-label">取消单</div>
+                </div>
+                <div class="stat-icon red"><i class="bi bi-x-circle"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card purple">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="stat-num" id="d-files">-</div>
+                    <div class="stat-label">排期文件</div>
+                </div>
+                <div class="stat-icon purple"><i class="bi bi-file-earmark-spreadsheet"></i></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 撤销操作面板（全宽、醒目） -->
+<div class="card mb-3 fade-in" id="undo-card" style="display:none; border:2px solid #f0ad4e; border-radius:12px; background:linear-gradient(135deg,#fff8e1,#fff3cd);">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-center gap-2 mb-2">
+            <div style="font-size:1.5rem;">&#x26A0;&#xFE0F;</div>
+            <div class="fw-bold" style="font-size:1rem; color:#856404;">可撤回的操作</div>
+            <div class="ms-auto d-flex gap-2">
+                <button class="btn btn-outline-secondary btn-sm" onclick="toggleUndoAll()">
+                    <i class="bi bi-check2-all me-1"></i>全选/取消
+                </button>
+                <button class="btn btn-warning shadow-sm px-3" onclick="undoSelected()" style="font-weight:bold; border-radius:10px;">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>撤销选中
+                </button>
+            </div>
+        </div>
+        <div id="undo-list" style="max-height:250px; overflow-y:auto;"></div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- 左侧：上传+处理 -->
+    <div class="col-lg-8">
+        <!-- 排期路径选择 -->
+        <div class="card mb-3 path-bar">
+            <div class="card-body py-2">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-folder2-open text-primary" style="font-size:1.2rem;"></i>
+                    <span class="fw-bold" style="font-size:0.85rem;white-space:nowrap;">当前排期路径：</span>
+                    <input type="text" id="current-path" class="form-control form-control-sm" readonly
+                           style="background:#fff;font-size:0.8rem;border-radius:8px;">
+                    <button class="btn btn-primary btn-sm" onclick="openPathBrowser()" style="white-space:nowrap;">
+                        <i class="bi bi-folder-symlink me-1"></i>切换
+                    </button>
+                    <button class="btn btn-outline-success btn-sm" onclick="syncSchedules()" style="white-space:nowrap;">
+                        <i class="bi bi-arrow-repeat me-1"></i>同步Z盘
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 路径浏览器弹窗 -->
+        <div class="modal fade" id="pathModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content" style="border-radius:16px;">
+                    <div class="modal-header" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:16px 16px 0 0;">
+                        <h6 class="modal-title"><i class="bi bi-folder2-open me-2 text-primary"></i>选择排期文件目录</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <button class="btn btn-outline-secondary btn-sm" onclick="browseUp()">
+                                <i class="bi bi-arrow-up"></i> 上一级
+                            </button>
+                            <input type="text" id="browse-current" class="form-control form-control-sm"
+                                   style="font-size:0.82rem;" readonly>
+                            <button class="btn btn-sm btn-outline-primary" onclick="browseCustomPath()">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                        </div>
+                        <div id="browse-list" style="max-height:400px;overflow-y:auto;"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <small class="text-muted me-auto">选中包含xlsx文件的目录后点击"使用此目录"</small>
+                        <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button class="btn btn-primary" onclick="confirmPath()">
+                            <i class="bi bi-check-lg me-1"></i>使用此目录
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 手动选择排期弹窗 -->
+        <div class="modal fade" id="manualAssignModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content" style="border-radius:16px;">
+                    <div class="modal-header" style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border-radius:16px 16px 0 0;">
+                        <h6 class="modal-title"><i class="bi bi-hand-index me-2 text-warning"></i>手动指定排期文件</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="small text-muted mb-2">当SKU无法自动匹配排期时，可在此手动选择目标排期文件和工作表。</p>
+                        <div id="manual-file-list" style="max-height:400px;overflow-y:auto;">
+                            <div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div> 加载排期文件列表...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 上传区 -->
+        <div class="card glass-card mb-3" id="upload-card">
+            <div class="card-body">
+                <div class="upload-zone" id="upload-zone">
+                    <input type="file" id="pdf-input" accept=".pdf,.xlsx,.xls" multiple style="display:none;">
+                    <i class="bi bi-cloud-arrow-up upload-icon"></i>
+                    <p class="mt-2 mb-1 fw-bold" style="position:relative;z-index:1;">拖放PDF或Excel文件到此处（支持多个）</p>
+                    <small class="text-muted" style="position:relative;z-index:1;">
+                        支持PDF和Excel(WPS转换) | 自动识别新单/修改单/取消单
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- 解析结果 -->
+        <div id="results-area" style="display:none;" class="fade-in">
+            <div class="d-flex gap-2 mb-3" id="summary-badges"></div>
+            <!-- 错误分类面板 -->
+            <div id="error-panel" style="display:none;" class="mb-3">
+                <div class="card" style="border:2px solid #fca5a5;border-radius:14px;">
+                    <div class="card-header d-flex justify-content-between align-items-center" style="background:#fef2f2;border-radius:12px 12px 0 0;">
+                        <span class="text-danger fw-bold">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>无法自动处理的项目
+                            <span class="badge bg-danger ms-1" id="error-total">0</span>
+                        </span>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#error-collapse" style="font-size:0.72rem;">
+                            <i class="bi bi-chevron-down me-1"></i>展开/收起
+                        </button>
+                    </div>
+                    <div class="collapse show" id="error-collapse">
+                        <div class="card-body py-2" id="error-categories"></div>
+                        <div class="card-footer py-1 d-flex justify-content-between align-items-center" style="background:#fffbeb;border-radius:0 0 12px 12px;">
+                            <small class="text-warning"><i class="bi bi-info-circle me-1"></i>以上项目需要手动处理，不会包含在"一键处理"中</small>
+                            <button class="btn btn-sm btn-outline-warning" onclick="openManualAssign()" style="font-size:0.72rem;">
+                                <i class="bi bi-hand-index me-1"></i>手动指定排期
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="orders-list"></div>
+            <div class="d-flex gap-2 mt-3" id="action-bar" style="display:none;">
+                <button class="btn btn-primary btn-lg flex-fill" onclick="batchExecute()">
+                    <i class="bi bi-lightning-fill me-1"></i>一键处理全部
+                </button>
+                <button class="btn btn-outline-secondary" onclick="resetAll()">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>重新开始
+                </button>
+            </div>
+        </div>
+
+        <!-- 处理完成 -->
+        <div id="done-area" style="display:none;" class="fade-in">
+            <div class="card glass-card mb-3">
+                <div class="card-body">
+                    <div class="text-center py-3">
+                        <i class="bi bi-check-circle-fill text-success" style="font-size:2.5rem;"></i>
+                        <h5 class="mt-2">处理完成</h5>
+                        <div id="done-summary"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 删除选中入单行（可撤销） -->
+            <div class="card mb-3" id="delete-entries-card" style="display:none; border:2px solid #dc3545; border-radius:12px;">
+                <div class="card-header bg-danger bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <span class="fw-bold text-danger">
+                        <i class="bi bi-trash me-1"></i>删除已入单行
+                    </span>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="toggleDeleteAll()">
+                            <i class="bi bi-check2-all me-1"></i>全选/取消
+                        </button>
+                        <button class="btn btn-danger btn-sm shadow-sm px-3" onclick="deleteSelectedEntries()" style="border-radius:10px;">
+                            <i class="bi bi-trash me-1"></i>删除选中
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body py-2" id="delete-entries-list" style="max-height:250px; overflow-y:auto;"></div>
+                <div class="card-footer text-muted small">
+                    <i class="bi bi-info-circle me-1"></i>删除后可在左上角"可撤回的操作"中一键恢复
+                </div>
+            </div>
+
+            <!-- 一键重试+定时自动重入 -->
+            <div class="card mb-3" id="reentry-card" style="display:none; border:2px solid #0d6efd; border-radius:12px;">
+                <div class="card-header bg-primary bg-opacity-10">
+                    <span class="fw-bold text-primary">
+                        <i class="bi bi-arrow-repeat me-1"></i>一键重新入单
+                    </span>
+                </div>
+                <div class="card-body py-3">
+                    <p class="small text-muted mb-2">删除错误行后，可一键重新入单（使用最新代码处理同一批PDF）</p>
+                    <div class="d-flex gap-2 align-items-center mb-2">
+                        <button class="btn btn-primary" onclick="reentryNow()">
+                            <i class="bi bi-play-fill me-1"></i>立即重新入单
+                        </button>
+                        <span class="text-muted">或</span>
+                        <div class="input-group" style="width:200px;">
+                            <input type="time" id="schedule-time" class="form-control form-control-sm">
+                            <button class="btn btn-outline-primary btn-sm" onclick="scheduleReentry()">
+                                <i class="bi bi-clock me-1"></i>定时
+                            </button>
+                        </div>
+                    </div>
+                    <div id="reentry-result" style="display:none;"></div>
+                    <div id="scheduled-info" style="display:none;" class="mt-2"></div>
+                </div>
+            </div>
+
+            <div class="card border-warning mb-3" id="failed-card" style="display:none;">
+                <div class="card-header bg-warning text-dark" id="failed-title">
+                    <i class="bi bi-exclamation-triangle me-2"></i>部分文件处理失败
+                </div>
+                <div class="card-body" id="failed-list"></div>
+                <div class="card-footer">
+                    <button class="btn btn-warning" onclick="retryFailed()">
+                        <i class="bi bi-arrow-repeat me-1"></i>一键重试保存
+                    </button>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-success btn-lg" onclick="showBackupDialog()">
+                    <i class="bi bi-archive me-1"></i>创建备份
+                </button>
+                <button class="btn btn-outline-primary btn-lg" onclick="resetAll()">
+                    <i class="bi bi-plus-circle me-1"></i>继续录入
+                </button>
+            </div>
+            <div id="backup-result" class="mt-2"></div>
+        </div>
+    </div>
+
+    <!-- 右侧 -->
+    <div class="col-lg-4">
+        <!-- 智能搜索（模糊） -->
+        <div class="card glass-card mb-3">
+            <div class="card-header"><i class="bi bi-search me-2"></i>智能搜索</div>
+            <div class="card-body">
+                <div class="input-group">
+                    <input type="text" id="po-search" class="form-control" placeholder="PO号 / SKU / 客户名 / 货号..."
+                           onkeypress="if(event.key==='Enter')searchPO()">
+                    <button class="btn btn-primary" onclick="searchPO()">搜索</button>
+                </div>
+                <div class="form-check mt-1">
+                    <input class="form-check-input" type="checkbox" id="fuzzy-mode" checked>
+                    <label class="form-check-label small text-muted">模糊搜索（搜索所有列）</label>
+                </div>
+                <div id="search-results" class="mt-2" style="max-height:200px;overflow-y:auto;"></div>
+            </div>
+        </div>
+
+        <!-- 邮件面板 -->
+        <div class="card glass-card mb-3" id="email-panel">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-envelope me-2 text-info"></i>邮件附件</span>
+                <button class="btn btn-sm btn-outline-info" onclick="checkEmails()" style="font-size:0.72rem;">
+                    <i class="bi bi-envelope-open me-1"></i>检查新邮件
+                </button>
+            </div>
+            <div class="card-body py-2" id="email-list" style="max-height:200px;overflow-y:auto;">
+                <div class="text-center py-2 text-muted small">点击"检查新邮件"扫描附件</div>
+            </div>
+        </div>
+
+        <!-- 异常提醒 -->
+        <div class="card glass-card mb-3" id="issues-card" style="display:none;">
+            <div class="card-header d-flex justify-content-between align-items-center issue-header">
+                <span class="text-danger fw-bold">
+                    <i class="bi bi-exclamation-diamond-fill me-1"></i>异常提醒
+                    <span class="badge bg-danger ms-1" id="issues-count">0</span>
+                </span>
+                <button class="btn btn-sm btn-outline-danger" onclick="clearIssues()" style="font-size:0.72rem;">
+                    <i class="bi bi-trash me-1"></i>清空
+                </button>
+            </div>
+            <div class="card-body py-2" id="issues-list" style="max-height:350px;overflow-y:auto;"></div>
+            <div class="card-footer py-1">
+                <small class="text-muted">系统自动检测 | 需要你手动处理的问题</small>
+            </div>
+        </div>
+
+        <!-- 待重试队列（因被占用未保存） -->
+        <div class="card glass-card mb-3" id="retry-card" style="display:none;">
+            <div class="card-header d-flex justify-content-between align-items-center bg-warning bg-opacity-10">
+                <span class="text-warning fw-bold">
+                    <i class="bi bi-hourglass-split me-1"></i>因被占用未保存
+                    <span class="badge bg-warning text-dark ms-1" id="retry-count">0</span>
+                </span>
+                <small class="text-muted" id="retry-timer">自动重试中...</small>
+            </div>
+            <div class="card-body py-2" id="retry-list" style="max-height:180px;overflow-y:auto;"></div>
+            <div class="card-footer d-flex gap-2">
+                <button class="btn btn-warning btn-sm flex-fill" onclick="manualRetry()">
+                    <i class="bi bi-arrow-repeat me-1"></i>立即重试
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="clearPending()">
+                    <i class="bi bi-trash me-1"></i>清空
+                </button>
+            </div>
+        </div>
+
+        <!-- 排期文件占用监控 -->
+        <div class="card glass-card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-hdd-network me-2"></i>排期文件状态</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadFileStatus()" style="font-size:0.72rem;">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+            </div>
+            <div class="card-body py-1" id="file-status-list" style="max-height:250px;overflow-y:auto;">
+                <div class="text-center py-3 text-muted small">点击刷新加载...</div>
+            </div>
+            <div class="card-footer py-1">
+                <small class="text-muted" id="file-status-summary">
+                    通过~$锁文件+写入测试检测占用 | 显示使用者
+                </small>
+            </div>
+        </div>
+
+        <!-- 排期分类导航 -->
+        <div class="card glass-card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-collection me-2 text-primary"></i>排期分类导航</span>
+                <div class="d-flex gap-1 align-items-center">
+                    <input type="text" id="sched-filter" class="form-control form-control-sm"
+                           placeholder="搜索客户..." oninput="filterScheduleDirs()"
+                           style="width:100px;font-size:0.72rem;padding:2px 8px;height:26px;">
+                    <button class="btn btn-sm btn-outline-primary" onclick="loadScheduleDirs()" style="font-size:0.72rem;">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body py-1" id="sched-dirs-list" style="max-height:300px;overflow-y:auto;">
+                <div class="text-center py-3 text-muted small">加载中...</div>
+            </div>
+            <div class="card-footer py-1">
+                <small class="text-muted" id="sched-dirs-summary">点击客户名可直接打开对应排期文件夹</small>
+            </div>
+        </div>
+
+        <!-- 总排期操作 -->
+        <div class="card master-panel mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-table me-2 text-purple"></i>总排期操作</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadMasterInfo()" style="font-size:0.72rem;">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+            </div>
+            <div class="card-body py-2">
+                <div id="master-status" class="mb-2" style="font-size:0.82rem;">
+                    <div class="text-center py-1 text-muted small">加载中...</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-outline-primary" onclick="scanYellowRows()" id="btn-scan-yellow">
+                        <i class="bi bi-search me-1"></i>扫描黄色行
+                    </button>
+                    <button class="btn btn-sm btn-warning" onclick="copyToMaster()" id="btn-copy-master" disabled>
+                        <i class="bi bi-arrow-right-circle me-1"></i>一键录入总排期
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="clearMasterYellow()" id="btn-clear-yellow">
+                        <i class="bi bi-eraser me-1"></i>清除黄色填充
+                    </button>
+                </div>
+                <div id="yellow-preview" class="mt-2" style="display:none;max-height:200px;overflow-y:auto;"></div>
+            </div>
+            <div class="card-footer py-1">
+                <small class="text-muted">扫描分排期黄色行 → 一键复制到总排期 | 数据不变仅变黄</small>
+            </div>
+        </div>
+
+        <!-- 快捷操作 -->
+        <div class="row g-2 mb-3">
+            <div class="col-6">
+                <div class="quick-action" onclick="showBackupDialog()">
+                    <i class="bi bi-archive text-success"></i>
+                    <span>创建备份</span>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="quick-action" onclick="location.href='/history'">
+                    <i class="bi bi-clock-history text-primary"></i>
+                    <span>操作历史</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 最近操作 -->
+        <div class="card glass-card">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-clock-history me-2"></i>最近操作</span>
+                <a href="{{ url_for('history_page') }}" class="small text-decoration-none">查看全部</a>
+            </div>
+            <div class="card-body p-0" id="recent-history" style="max-height:200px;overflow-y:auto;">
+                <div class="text-center py-3 text-muted small">加载中...</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let ORDERS = [];
+let FAILED = [];
+
+// ========== 动态标语 ==========
+const SLOGANS = [
+    '拥抱AI，走向未来',
+    '智能排期，高效工厂',
+    '科技赋能玩具制造',
+    '华登智造，创想无限',
+    '数据驱动，精准排产',
+    '一键录入，轻松高效'
+];
+let sloganIdx = 0;
+function initSlogan() {
+    const h = new Date().getHours();
+    const greet = h < 6 ? '夜深了，辛苦啦' : h < 9 ? '早上好' :
+                  h < 12 ? '上午好' : h < 14 ? '中午好' :
+                  h < 18 ? '下午好' : '晚上好';
+    document.getElementById('slogan-greeting').textContent = greet + '！';
+    typeSlogan();
+}
+function typeSlogan() {
+    const el = document.getElementById('slogan-text');
+    const text = SLOGANS[sloganIdx % SLOGANS.length];
+    sloganIdx++;
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(10px)';
+    setTimeout(() => {
+        el.textContent = text;
+        el.style.transition = 'all 0.6s cubic-bezier(0.16,1,0.3,1)';
+        el.style.opacity = '1';
+        el.style.transform = 'translateY(0)';
+    }, 300);
+    setTimeout(typeSlogan, 4000);
+}
+initSlogan();
+
+// ========== 仪表盘 ==========
+document.addEventListener('DOMContentLoaded', () => {
+    loadDashboard();
+    loadRecentHistory();
+    loadIssues();
+
+    const zone = document.getElementById('upload-zone');
+    const input = document.getElementById('pdf-input');
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e => {
+        e.preventDefault(); zone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) { input.files = e.dataTransfer.files; batchUpload(); }
+    });
+    input.addEventListener('change', batchUpload);
+});
+
+async function loadDashboard() {
+    try {
+        const d = await App.api('/api/dashboard');
+        document.getElementById('d-today').textContent = d.today.total;
+        document.getElementById('d-new').textContent = d.today.new;
+        document.getElementById('d-mod').textContent = d.today.modify;
+        document.getElementById('d-can').textContent = d.today.cancel;
+        document.getElementById('d-files').textContent = d.file_count;
+
+        if (d.locked_count > 0) {
+            document.getElementById('locked-card').style.display = 'block';
+            document.getElementById('locked-count').textContent = d.locked_count;
+            document.getElementById('locked-list').innerHTML =
+                d.locked_files.map(f => `<div class="locked-file"><i class="bi bi-lock-fill me-1"></i>${f}</div>`).join('');
+        }
+    } catch(e) {}
+}
+
+// ========== 上传 ==========
+async function batchUpload() {
+    const files = document.getElementById('pdf-input').files;
+    if (!files.length) return;
+    App.showLoading(`正在解析 ${files.length} 个PDF并匹配排期...`);
+    try {
+        const fd = new FormData();
+        for (let f of files) fd.append('files', f);
+        const data = await App.api('/api/batch-upload', { method: 'POST', body: fd });
+        ORDERS = data.orders || [];
+        renderOrders();
+        // 有异常时刷新异常提醒面板
+        if (data.issues && data.issues.length > 0) {
+            loadIssues();
+        }
+    } catch (e) {
+        App.alert('批量解析失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+function renderOrders() {
+    const area = document.getElementById('results-area');
+    area.style.display = 'block';
+    document.getElementById('done-area').style.display = 'none';
+
+    // 分离：可处理项 vs 错误项
+    const goodOrders = [];
+    const errorItems = []; // {category, title, icon, items:[]}
+
+    // 错误分类收集器
+    const errGroups = {};
+    function addError(cat, title, icon, item) {
+        if (!errGroups[cat]) errGroups[cat] = {title, icon, items: []};
+        errGroups[cat].items.push(item);
+    }
+
+    let nNew = 0, nMod = 0, nCan = 0, nErr = 0, nUnmatched = 0;
+
+    ORDERS.forEach(o => {
+        if (o.type === 'error') {
+            nErr++;
+            const issue = o.issue || {};
+            const cat = issue.category || 'parse_error';
+            addError(cat,
+                issue.title || '解析失败',
+                issue.icon || 'bi-x-circle-fill',
+                {filename: o.filename, tip: issue.tip || o.error || '', sku: issue.sku || ''});
+            return;
+        }
+
+        const actions = o.actions || [];
+        // 检查是否所有新增action都未匹配排期
+        const unmatched = actions.filter(a => a.type === 'new' && !a.schedule);
+        const matched = actions.filter(a => !(a.type === 'new' && !a.schedule));
+
+        if (unmatched.length > 0) {
+            nUnmatched += unmatched.length;
+            unmatched.forEach(a => {
+                addError('sku_not_found', 'SKU未匹配排期', 'bi-link-45deg',
+                    {filename: o.filename, sku: a.sku || a.line?.sku || '?',
+                     tip: `PO ${o.po_number || '?'} 的 SKU "${a.sku || a.line?.sku || ''}" 找不到对应排期文件，需手动录入`,
+                     qty: a.line?.qty || 0, po: o.po_number || ''});
+            });
+        }
+
+        // 修改单但无匹配记录
+        if (o.type === 'modify' && matched.length === 0 && actions.length === 0) {
+            if (o.existing_count > 0) {
+                // PO已存在但无数量/单价/出货期变化 → 跳过，不报错
+                addError('no_change', '无需修改', 'bi-check-circle',
+                    {filename: o.filename, tip: `PO ${o.po_number || '?'} 在排期中已存在 ${o.existing_count} 条记录，数量/单价/出货期均未变化，无需修改`, po: o.po_number || ''});
+                return;
+            }
+            nErr++;
+            addError('po_not_found', 'PO未找到记录', 'bi-search',
+                {filename: o.filename, tip: `PO ${o.po_number || '?'} 在排期文件中未找到任何记录，无法执行修改`, po: o.po_number || ''});
+            return;
+        }
+
+        // 统计可处理项
+        matched.forEach(a => {
+            if (a.type === 'new') nNew++;
+            else if (a.type === 'modify') nMod++;
+            else if (a.type === 'cancel') nCan++;
+        });
+        // 原本未匹配的new也计入统计（但标记警告）
+        if (unmatched.length > 0 && matched.length > 0) {
+            // 有部分匹配，保留这个order但标记
+        }
+        actions.forEach(a => {
+            if (a.type !== 'new') {
+                // modify/cancel 也统计
+            }
+        });
+
+        goodOrders.push(o);
+    });
+
+    // 渲染摘要
+    const totalOps = nNew + nMod + nCan;
+    const totalErr = nErr + nUnmatched;
+    document.getElementById('summary-badges').innerHTML = `
+        <span class="badge-stat new"><i class="bi bi-plus-circle"></i> 新增 ${nNew}</span>
+        <span class="badge-stat mod"><i class="bi bi-pencil"></i> 修改 ${nMod}</span>
+        <span class="badge-stat can"><i class="bi bi-x-circle"></i> 取消 ${nCan}</span>
+        ${totalErr ? `<span class="badge-stat err"><i class="bi bi-exclamation-circle"></i> 异常 ${totalErr}</span>` : ''}
+        <span class="text-muted small ms-auto">${ORDERS.length} 个PDF | ${totalOps} 项可处理</span>
+    `;
+
+    // 渲染错误分类面板
+    const errPanel = document.getElementById('error-panel');
+    if (Object.keys(errGroups).length > 0) {
+        errPanel.style.display = 'block';
+        document.getElementById('error-total').textContent = totalErr;
+        let ehtml = '';
+        for (const [cat, grp] of Object.entries(errGroups)) {
+            const colorMap = {parse_error:'danger', sku_not_found:'warning', po_not_found:'info'};
+            const color = colorMap[cat] || 'secondary';
+            ehtml += `<div class="err-category mb-2">
+                <div class="d-flex align-items-center gap-2 mb-1" style="font-size:0.85rem;">
+                    <i class="bi ${grp.icon} text-${color}"></i>
+                    <span class="fw-bold text-${color}">${grp.title}</span>
+                    <span class="badge bg-${color} bg-opacity-15 text-${color}">${grp.items.length}</span>
+                </div>`;
+            grp.items.forEach(item => {
+                ehtml += `<div class="err-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <span class="fw-bold" style="font-size:0.78rem;">${item.filename}</span>
+                        ${item.sku ? `<span class="badge bg-secondary bg-opacity-10 text-secondary" style="font-size:0.68rem;">SKU: ${item.sku}</span>` : ''}
+                        ${item.po ? `<span class="badge bg-primary bg-opacity-10 text-primary" style="font-size:0.68rem;">PO: ${item.po}</span>` : ''}
+                    </div>
+                    <div style="font-size:0.72rem;color:#64748b;line-height:1.5;margin-top:2px;">
+                        ${(item.tip || '').replace(/\n/g, '<br>')}
+                    </div>
+                    ${item.qty ? `<small class="text-muted">数量: ${item.qty.toLocaleString()}pcs</small>` : ''}
+                </div>`;
+            });
+            ehtml += '</div>';
+        }
+        document.getElementById('error-categories').innerHTML = ehtml;
+    } else {
+        errPanel.style.display = 'none';
+    }
+
+    // 渲染可处理订单
+    let html = '';
+    goodOrders.forEach((o, i) => {
+        const typeCls = o.type === 'cancel' ? 'can' : o.type === 'modify' ? 'mod' : 'new';
+        const typeLabel = o.type === 'cancel' ? '取消' : o.type === 'modify' ? '修改' : '新单';
+        const actions = o.actions || [];
+        const warnings = o.warnings || [];
+        const actCounts = {};
+        actions.forEach(a => { actCounts[a.type] = (actCounts[a.type] || 0) + 1; });
+        let actSummary = [];
+        if (actCounts.new) actSummary.push(`新增${actCounts.new}`);
+        if (actCounts.modify) actSummary.push(`修改${actCounts.modify}`);
+        if (actCounts.cancel) actSummary.push(`取消${actCounts.cancel}`);
+
+        const unmatchedSkus = actions.filter(a => a.type === 'new' && !a.schedule);
+        const hasWarnings = warnings.length > 0 || unmatchedSkus.length > 0;
+
+        html += `<div class="order-card ${typeCls}">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="type-dot ${typeCls}"></span>
+                <span class="type-label ${typeCls}">${typeLabel}</span>
+                <b>PO ${o.po_number || '?'}</b>
+                <small class="text-muted">${o.customer || ''}</small>
+                ${hasWarnings ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;"><i class="bi bi-exclamation-triangle"></i> 有异常</span>' : ''}
+                <small class="ms-auto text-muted">${o.filename}</small>
+            </div>
+            <div class="d-flex gap-3 small text-muted">
+                <span><i class="bi bi-calendar3"></i> ${o.ship_date || ''}</span>
+                <span><i class="bi bi-box"></i> ${o.line_count || 0}行</span>
+                <span>${actSummary.join(' | ')}</span>
+            </div>
+            ${actions.length ? `<div class="action-list mt-2">${actions.map(a => {
+                const noSched = a.type === 'new' && !a.schedule;
+                let preview = '';
+                if (a.type === 'new' && a.line) {
+                    const ln = a.line;
+                    const s = a.schedule;
+                    preview = `<div class="preview-row">
+                        <span class="pv-tag">SKU</span>${ln.sku || ln.sku_spec || '-'}
+                        <span class="pv-tag">数量</span>${(ln.qty||0).toLocaleString()}
+                        ${ln.price ? `<span class="pv-tag">单价</span>$${ln.price}` : ''}
+                        ${ln.customer_po ? `<span class="pv-tag">客PO</span>${ln.customer_po}` : ''}
+                        ${s ? `<span class="pv-dest">${s.sheet} 行${s.ref}</span>` : ''}
+                    </div>`;
+                } else if (a.type === 'modify' && a.changes) {
+                    const parts = Object.entries(a.changes).map(([col, val]) => {
+                        const old = a.record?.data?.[col] || '?';
+                        const colName = {I:'数量',Y:'单价',M:'出货',E:'客PO'}[col] || col;
+                        return `<span class="pv-tag">${colName}</span><s class="text-muted">${old}</s> → <b class="text-danger">${val}</b>`;
+                    }).join(' ');
+                    preview = `<div class="preview-row">${parts}
+                        <span class="pv-dest">${a.record?.sheet || ''} 行${a.record?.row || ''}</span>
+                    </div>`;
+                } else if (a.type === 'cancel' && a.record) {
+                    preview = `<div class="preview-row">
+                        <span class="pv-tag">行${a.record.row}</span>${a.sku || ''}
+                        → 移至取消订单Sheet
+                        <span class="pv-dest">${a.record.sheet || ''}</span>
+                    </div>`;
+                }
+                return `<div class="action-item ${a.type}${noSched ? ' unmatched' : ''}">
+                    <span class="act-dot ${a.type}"></span>${a.detail}
+                    ${noSched ? '<span class="badge bg-danger bg-opacity-10 text-danger ms-2" style="font-size:0.65rem;"><i class="bi bi-link-45deg"></i> 未匹配排期</span>' : ''}
+                    ${preview}
+                </div>`;
+            }).join('')}</div>` : ''}
+            ${warnings.length ? `<div class="inline-warnings mt-2">${warnings.map(w =>
+                `<div class="inline-warning ${w.color}"><i class="bi ${w.icon} me-1"></i>${w.title}</div>`
+            ).join('')}</div>` : ''}
+        </div>`;
+    });
+    document.getElementById('orders-list').innerHTML = html || '<div class="text-center py-3 text-muted">没有可自动处理的订单</div>';
+    document.getElementById('action-bar').style.display = (totalOps > 0) ? 'flex' : 'none';
+}
+
+// ========== 执行（带进度条） ==========
+let _progressTimer = null;
+async function pollProgress() {
+    try {
+        const p = await App.api('/api/batch-progress');
+        if (p.running) {
+            const pct = p.total > 0 ? Math.round(p.done / p.total * 100) : 0;
+            document.getElementById('loading-text').textContent =
+                `正在处理 ${p.current}... (${p.done}/${p.total} - ${pct}%)`;
+        }
+    } catch(e) {}
+}
+
+async function batchExecute() {
+    if (!ORDERS.length) return;
+    if (!confirm(`确认处理 ${ORDERS.length} 个PDF的所有操作？\n\n将通过WPS COM写入，不影响其他行格式。`)) return;
+
+    App.showLoading('正在通过WPS COM批量写入排期...');
+    _progressTimer = setInterval(pollProgress, 800);
+    try {
+        const data = await App.api('/api/batch-execute', {
+            method: 'POST',
+            body: { orders: ORDERS.filter(o => o.type !== 'error') }
+        });
+
+        document.getElementById('results-area').style.display = 'none';
+        document.getElementById('done-area').style.display = 'block';
+
+        const results = data.results || [];
+        const failed = data.failed || [];
+        FAILED = failed;
+
+        let summary = `<p class="text-success fw-bold">${results.length} 个文件处理成功并已保存到Z盘</p>`;
+        results.forEach(r => {
+            const msg = r.msg || '';
+            // 检测空字段警告（格式：[空字段: xxx, yyy]）
+            const warnMatch = msg.match(/\[空字段:\s*([^\]]+)\]/g);
+            if (warnMatch) {
+                const cleanMsg = msg.replace(/\s*\[空字段:[^\]]+\]/g, '');
+                summary += `<div class="small"><i class="bi bi-check2 text-success me-1"></i>${r.file}: ${cleanMsg}</div>`;
+                warnMatch.forEach(w => {
+                    const fields = w.replace('[空字段:', '').replace(']', '').trim();
+                    summary += `<div class="small text-danger ms-3"><i class="bi bi-exclamation-triangle-fill me-1"></i><b>未填字段：</b>${fields}</div>`;
+                });
+            } else {
+                summary += `<div class="small text-muted"><i class="bi bi-check2 text-success me-1"></i>${r.file}: ${msg}</div>`;
+            }
+        });
+        document.getElementById('done-summary').innerHTML = summary;
+
+        if (failed.length > 0) {
+            document.getElementById('failed-card').style.display = 'block';
+            let fhtml = '';
+            let hasLock = false, hasError = false;
+            failed.forEach(f => {
+                const reason = f.reason || f.msg || '未知错误';
+                const isLock = reason.includes('占用') || reason.includes('只读') || reason.includes('Permission');
+                if (isLock) hasLock = true; else hasError = true;
+                const badge = isLock
+                    ? '<span class="badge bg-warning text-dark">待重试</span>'
+                    : '<span class="badge bg-danger">处理异常</span>';
+                const tip = isLock ? '文件被其他人打开，关闭后可重试' : '处理过程中出错，请检查文件';
+                fhtml += `<div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                    <div><b>${f.file}</b><br><small class="text-danger" title="${reason}">${tip}</small></div>
+                    ${badge}
+                </div>`;
+            });
+            // 动态更新标题
+            const title = hasLock && hasError ? '部分文件处理失败'
+                : hasLock ? '因被占用未保存' : '处理异常';
+            document.getElementById('failed-title').innerHTML =
+                `<i class="bi bi-exclamation-triangle me-2"></i>${title}`;
+            document.getElementById('failed-list').innerHTML = fhtml;
+        } else {
+            document.getElementById('failed-card').style.display = 'none';
+        }
+
+        loadRecentHistory();
+        loadDashboard();
+        loadUndoInfo();
+
+        // 收集入单条目信息用于删除面板和重入
+        const batchEntries = [];
+        const validOrders = ORDERS.filter(o => o.type !== 'error');
+        for (const order of validOrders) {
+            const h = order.header || {};
+            for (const act of (order.actions || [])) {
+                const entry = {
+                    type: act.type,
+                    sku: act.sku || '',
+                    customer: h.customer || '',
+                    qty: (act.line || {}).qty || '',
+                    file: '', sheet: '', row: 0
+                };
+                if (act.type === 'new' && act.schedule) {
+                    entry.file = act.schedule.file || '';
+                    entry.sheet = act.schedule.sheet || '';
+                    // 行号在执行后才确定，从results中提取
+                    entry.fname = act.schedule.fname || '';
+                }
+                if (act.type === 'modify' && act.record) {
+                    entry.file = act.record.file || '';
+                    entry.sheet = act.record.sheet || '';
+                    entry.row = act.record.row || 0;
+                    entry.fname = act.record.fname || '';
+                }
+                if (act.type === 'cancel' && act.record) {
+                    entry.file = act.record.file || '';
+                    entry.sheet = act.record.sheet || '';
+                    entry.row = act.record.row || 0;
+                    entry.fname = act.record.fname || '';
+                }
+                batchEntries.push(entry);
+            }
+        }
+        showDeletePanel(batchEntries, validOrders);
+
+    } catch (e) {
+        App.alert('批量处理失败: ' + e.message, 'danger');
+    } finally {
+        if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+        App.hideLoading();
+    }
+}
+
+async function retryFailed() {
+    if (!FAILED.length) return;
+    App.showLoading('正在重试保存...');
+    try {
+        const data = await App.api('/api/retry-failed', {
+            method: 'POST', body: { items: FAILED }
+        });
+        const ok = data.ok || [];
+        FAILED = data.failed || [];
+        App.alert(`成功保存 ${ok.length} 个，仍有 ${FAILED.length} 个未保存`, 'info');
+        if (FAILED.length === 0) {
+            document.getElementById('failed-card').style.display = 'none';
+        }
+    } catch (e) {
+        App.alert('重试失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+// ========== 备份 ==========
+let _backupFiles = [];
+async function showBackupDialog() {
+    // 加载文件列表
+    try {
+        _backupFiles = await App.api('/api/schedule-files');
+    } catch (e) {
+        App.alert('加载文件列表失败: ' + e.message, 'danger'); return;
+    }
+    const recentFiles = _backupFiles.filter(f => f.recent);
+    let html = `<div class="modal fade" id="backupModal" tabindex="-1"><div class="modal-dialog modal-lg">
+    <div class="modal-content"><div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-archive me-2"></i>选择备份文件</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div><div class="modal-body">
+        <div class="d-flex gap-2 mb-3">
+            <button class="btn btn-sm btn-primary" onclick="backupSelectAll()">全选</button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="backupSelectNone()">全不选</button>
+            <button class="btn btn-sm btn-warning" onclick="backupSelectRecent()">
+                <i class="bi bi-clock me-1"></i>只选最近修改(${recentFiles.length})
+            </button>
+            <input type="text" class="form-control form-control-sm ms-auto" style="max-width:200px;"
+                   placeholder="搜索文件名..." oninput="filterBackupList(this.value)">
+        </div>
+        <div style="max-height:400px;overflow-y:auto;" id="backup-file-list">`;
+    _backupFiles.forEach((f, i) => {
+        const checked = f.recent ? 'checked' : '';
+        const badge = f.recent ? '<span class="badge bg-warning text-dark ms-1">近期修改</span>' : '';
+        html += `<div class="form-check backup-item py-1 border-bottom" data-name="${f.name.toLowerCase()}">
+            <input class="form-check-input backup-cb" type="checkbox" value="${i}" id="bk${i}" ${checked}>
+            <label class="form-check-label d-flex justify-content-between w-100" for="bk${i}">
+                <span class="text-truncate" style="max-width:400px;">${f.name}${badge}</span>
+                <small class="text-muted">${f.mtime}</small>
+            </label></div>`;
+    });
+    html += `</div></div><div class="modal-footer">
+        <span class="text-muted me-auto" id="backup-sel-count">已选 ${recentFiles.length} 个</span>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-success" onclick="doBackup()">
+            <i class="bi bi-archive me-1"></i>开始备份
+        </button>
+    </div></div></div></div>`;
+    // 移除旧modal
+    const old = document.getElementById('backupModal');
+    if (old) old.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+    const modal = new bootstrap.Modal(document.getElementById('backupModal'));
+    modal.show();
+    // 监听checkbox变化更新计数
+    document.querySelectorAll('.backup-cb').forEach(cb => {
+        cb.addEventListener('change', updateBackupCount);
+    });
+}
+function updateBackupCount() {
+    const n = document.querySelectorAll('.backup-cb:checked').length;
+    document.getElementById('backup-sel-count').textContent = `已选 ${n} 个`;
+}
+function backupSelectAll() {
+    document.querySelectorAll('.backup-cb').forEach(cb => { cb.checked = true; });
+    updateBackupCount();
+}
+function backupSelectNone() {
+    document.querySelectorAll('.backup-cb').forEach(cb => { cb.checked = false; });
+    updateBackupCount();
+}
+function backupSelectRecent() {
+    document.querySelectorAll('.backup-cb').forEach((cb, i) => {
+        cb.checked = _backupFiles[i].recent;
+    });
+    updateBackupCount();
+}
+function filterBackupList(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.backup-item').forEach(item => {
+        item.style.display = !q || item.dataset.name.includes(q) ? '' : 'none';
+    });
+}
+async function doBackup() {
+    const selected = [];
+    document.querySelectorAll('.backup-cb:checked').forEach(cb => {
+        selected.push(_backupFiles[parseInt(cb.value)].path);
+    });
+    if (!selected.length) { App.alert('请至少选择一个文件', 'warning'); return; }
+    bootstrap.Modal.getInstance(document.getElementById('backupModal')).hide();
+    App.showLoading(`正在备份 ${selected.length} 个文件...`);
+    try {
+        const data = await App.api('/api/backup', { method: 'POST', body: { files: selected } });
+        document.getElementById('backup-result').innerHTML =
+            `<div class="alert alert-success"><i class="bi bi-check-circle me-1"></i>${data.msg}</div>`;
+    } catch (e) {
+        document.getElementById('backup-result').innerHTML =
+            `<div class="alert alert-danger">${e.message}</div>`;
+    } finally { App.hideLoading(); }
+}
+
+// ========== 智能搜索（支持模糊） ==========
+async function searchPO() {
+    const kw = document.getElementById('po-search').value.trim();
+    if (!kw) return;
+    const fuzzy = document.getElementById('fuzzy-mode').checked;
+    App.showLoading('搜索中...');
+    try {
+        let results;
+        if (fuzzy) {
+            const data = await App.api('/api/fuzzy-search', { method: 'POST', body: { keyword: kw } });
+            results = data.results || [];
+        } else {
+            results = await App.api('/api/search-po', { method: 'POST', body: { po: kw } });
+        }
+        const c = document.getElementById('search-results');
+        if (!results || results.length === 0) {
+            c.innerHTML = '<small class="text-muted">未找到记录</small>'; return;
+        }
+        c.innerHTML = `<small class="text-success mb-1 d-block">找到 ${results.length} 条${fuzzy ? '（模糊）' : ''}</small>` +
+            results.slice(0, 30).map(r => `<div class="search-item">
+                <div class="d-flex justify-content-between">
+                    <b>${r.sheet}</b>
+                    <small class="text-muted">行${r.row}</small>
+                </div>
+                <small>${r.data.F||r.data.G||''} | PO:${r.data.D||''} | ${r.data.I||''}pcs | ${r.data.M||''}</small>
+                ${r.hit_col ? `<span class="badge bg-info bg-opacity-10 text-info" style="font-size:0.6rem;">匹配:${r.hit_col}</span>` : ''}
+            </div>`).join('');
+    } catch (e) {
+        App.alert('搜索失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+// ========== 邮件 ==========
+async function checkEmails() {
+    const el = document.getElementById('email-list');
+    el.innerHTML = '<div class="text-center py-2"><div class="spinner-border spinner-border-sm"></div> 正在检查邮箱...</div>';
+    try {
+        const data = await App.api('/api/email/check', { method: 'POST', body: {} });
+        if (data.error) {
+            el.innerHTML = `<div class="text-warning small py-2"><i class="bi bi-exclamation-triangle me-1"></i>${data.error}</div>`;
+            return;
+        }
+        if (!data.emails || data.emails.length === 0) {
+            el.innerHTML = '<div class="text-center py-2 text-muted small">没有含PDF附件的新邮件</div>';
+            return;
+        }
+        let html = `<small class="text-success d-block mb-1">发现 ${data.emails.length} 封含PDF的邮件</small>`;
+        data.emails.forEach(e => {
+            html += `<div class="border-bottom py-1" style="font-size:0.78rem;">
+                <div class="fw-bold">${e.subject || '(无主题)'}</div>
+                <small class="text-muted">${e.from}</small>
+                <div class="mt-1">`;
+            e.attachments.forEach(a => {
+                html += `<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="downloadEmailPDF('${a.msg_id}','${a.filename.replace(/'/g, "\\'")}')" style="font-size:0.7rem;">
+                    <i class="bi bi-file-pdf me-1"></i>${a.filename}
+                </button>`;
+            });
+            html += '</div></div>';
+        });
+        el.innerHTML = html;
+    } catch(e) {
+        el.innerHTML = `<div class="text-danger small py-2">${e.message}</div>`;
+    }
+}
+
+async function downloadEmailPDF(msgId, filename) {
+    App.showLoading(`正在下载 ${filename} ...`);
+    try {
+        const data = await App.api('/api/email/download', {
+            method: 'POST', body: { msg_id: msgId, filename }
+        });
+        if (data.error && !data.path) {
+            App.alert(data.error, 'danger');
+        } else {
+            App.alert(`${filename} 下载成功，已放入上传目录`, 'success');
+        }
+    } catch(e) {
+        App.alert('下载失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+// ========== 历史 ==========
+async function loadRecentHistory() {
+    try {
+        const history = await App.api('/api/history');
+        const el = document.getElementById('recent-history');
+        if (!history || history.length === 0) {
+            el.innerHTML = '<div class="text-center py-3 text-muted small">暂无记录</div>'; return;
+        }
+        el.innerHTML = history.slice(-15).reverse().map(h => {
+            const cls = h.action === 'cancel' ? 'text-danger' :
+                        h.action === 'modify' ? 'text-warning' : 'text-success';
+            return `<div class="history-item">
+                <div class="d-flex justify-content-between">
+                    <span class="${cls} fw-bold small">${h.action.toUpperCase()}</span>
+                    <span class="text-muted" style="font-size:0.7rem;">${h.time}</span>
+                </div>
+                <div class="small">PO ${h.po} ${h.detail}</div>
+            </div>`;
+        }).join('');
+    } catch (e) {}
+}
+
+function resetAll() {
+    ORDERS = []; FAILED = [];
+    document.getElementById('pdf-input').value = '';
+    document.getElementById('results-area').style.display = 'none';
+    document.getElementById('done-area').style.display = 'none';
+    document.getElementById('upload-card').style.display = 'block';
+}
+
+// ========== 异常提醒 ==========
+async function loadIssues() {
+    try {
+        const items = await App.api('/api/issues');
+        const card = document.getElementById('issues-card');
+        if (!items || items.length === 0) {
+            card.style.display = 'none';
+            return;
+        }
+        card.style.display = 'block';
+        document.getElementById('issues-count').textContent = items.length;
+
+        // 按分类分组
+        const grouped = {};
+        items.forEach(item => {
+            const cat = item.category || 'unknown';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(item);
+        });
+
+        // 分类排序：danger先，warning次，info最后
+        const colorOrder = {'danger': 0, 'warning': 1, 'info': 2};
+        const sortedCats = Object.entries(grouped).sort((a, b) => {
+            const ca = colorOrder[a[1][0].color] ?? 3;
+            const cb = colorOrder[b[1][0].color] ?? 3;
+            return ca - cb;
+        });
+
+        let html = '';
+        for (const [cat, list] of sortedCats) {
+            const f = list[0];
+            html += `<div class="issue-group">
+                <div class="issue-group-header">
+                    <i class="bi ${f.icon} text-${f.color}"></i>
+                    <span class="fw-bold text-${f.color}">${f.title}</span>
+                    <span class="badge bg-${f.color} bg-opacity-15 text-${f.color}">${list.length}</span>
+                </div>`;
+            list.forEach(item => {
+                html += `<div class="issue-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <span class="fw-bold">${item.filename}</span>
+                        <span class="text-muted" style="font-size:0.65rem;white-space:nowrap;">${item.time || ''}</span>
+                    </div>
+                    <div class="issue-tip">${(item.tip || '').replace(/\n/g, '<br>')}</div>
+                    ${item.sku ? `<span class="badge bg-secondary bg-opacity-15 text-secondary mt-1" style="font-size:0.68rem;">SKU: ${item.sku}</span>` : ''}
+                </div>`;
+            });
+            html += '</div>';
+        }
+        document.getElementById('issues-list').innerHTML = html;
+    } catch(e) {}
+}
+
+async function clearIssues() {
+    if (!confirm('确认清空所有异常提醒？')) return;
+    await App.api('/api/clear-issues', { method: 'POST', body: {} });
+    loadIssues();
+    App.alert('异常提醒已清空', 'success');
+}
+
+// ========== 待重试队列 ==========
+let RETRY_TIMER = null;
+
+async function loadPendingRetries() {
+    try {
+        const items = await App.api('/api/pending-retries');
+        const card = document.getElementById('retry-card');
+        if (!items || items.length === 0) {
+            card.style.display = 'none';
+            if (RETRY_TIMER) { clearInterval(RETRY_TIMER); RETRY_TIMER = null; }
+            return;
+        }
+        card.style.display = 'block';
+        document.getElementById('retry-count').textContent = items.length;
+        document.getElementById('retry-list').innerHTML = items.map(item =>
+            `<div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="font-size:0.82rem;">
+                <div>
+                    <b>${item.file}</b>
+                    <div class="text-muted small">${item.msg || ''}</div>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-warning text-dark">第${item.retries || 0}次</span>
+                    <div class="text-muted" style="font-size:0.7rem;">${item.last_retry || item.time || ''}</div>
+                </div>
+            </div>`
+        ).join('');
+
+        // 启动自动重试轮询（30秒检查一次显示，实际重试由后台线程3分钟执行）
+        if (!RETRY_TIMER) {
+            RETRY_TIMER = setInterval(loadPendingRetries, 30000);
+        }
+    } catch(e) {}
+}
+
+async function manualRetry() {
+    App.showLoading('正在手动重试保存...');
+    try {
+        const result = await App.api('/api/auto-retry', { method: 'POST', body: {} });
+        const okN = (result.ok || []).length;
+        const failN = (result.failed || []).length;
+        if (okN > 0) App.alert(`成功保存 ${okN} 个文件！${failN > 0 ? ` 仍有 ${failN} 个待重试` : ''}`, 'success');
+        else if (failN > 0) App.alert(`${failN} 个文件仍被占用，将持续自动重试`, 'warning');
+        else App.alert('无待重试项', 'info');
+        loadPendingRetries();
+        loadDashboard();
+    } catch(e) {
+        App.alert('重试失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+async function clearPending() {
+    if (!confirm('确认清空待重试队列？这些未保存的操作将不再自动重试。')) return;
+    await App.api('/api/clear-pending', { method: 'POST', body: {} });
+    loadPendingRetries();
+}
+
+// ========== 文件占用监控 ==========
+async function loadFileStatus() {
+    const el = document.getElementById('file-status-list');
+    el.innerHTML = '<div class="text-center py-2"><div class="spinner-border spinner-border-sm"></div> 正在扫描Z盘...</div>';
+    try {
+        const files = await App.api('/api/file-status');
+        let locked = 0, available = 0;
+        let html = '';
+        // 先显示被占用的文件
+        files.forEach(f => {
+            if (f.status === 'locked') {
+                locked++;
+                const short = f.fname.length > 35 ? f.fname.substring(0, 35) + '...' : f.fname;
+                html += `<div class="d-flex align-items-center gap-2 py-1 border-bottom" style="font-size:0.78rem;">
+                    <i class="bi bi-lock-fill text-danger"></i>
+                    <div class="flex-fill">
+                        <div class="fw-bold text-danger">${short}</div>
+                        <small class="text-muted">${f.lock_type}${f.user ? ' - ' + f.user : ''}</small>
+                    </div>
+                </div>`;
+            } else {
+                available++;
+            }
+        });
+        if (locked === 0) {
+            html = '<div class="text-center py-2 text-success small"><i class="bi bi-check-circle me-1"></i>所有排期文件均可用</div>';
+        }
+        el.innerHTML = html;
+        document.getElementById('file-status-summary').innerHTML =
+            `<span class="text-success">${available} 可用</span> | <span class="text-danger">${locked} 被占用</span> | 共 ${files.length} 个文件`;
+    } catch(e) {
+        el.innerHTML = `<div class="text-center py-2 text-danger small">加载失败: ${e.message}</div>`;
+    }
+}
+
+// ========== 排期分类导航 ==========
+let SCHED_DIRS = [];
+
+async function loadScheduleDirs() {
+    const el = document.getElementById('sched-dirs-list');
+    el.innerHTML = '<div class="text-center py-2"><div class="spinner-border spinner-border-sm"></div> 正在扫描...</div>';
+    try {
+        const data = await App.api('/api/schedule-dirs');
+        SCHED_DIRS = data.groups || [];
+        renderScheduleDirs(SCHED_DIRS);
+        document.getElementById('sched-dirs-summary').innerHTML =
+            `共 ${SCHED_DIRS.length} 个客户排期目录 | 点击直接打开`;
+    } catch(e) {
+        el.innerHTML = `<div class="text-center py-2 text-danger small">加载失败: ${e.message}</div>`;
+    }
+}
+
+function renderScheduleDirs(list) {
+    const el = document.getElementById('sched-dirs-list');
+    if (!list.length) {
+        el.innerHTML = '<div class="text-center py-2 text-muted small">无匹配结果</div>';
+        return;
+    }
+    el.innerHTML = list.map(g => {
+        const info = [];
+        if (g.file_count) info.push(`${g.file_count}个文件`);
+        if (g.sub_count) info.push(`${g.sub_count}个子目录`);
+        return `<div class="sched-dir-item" onclick="openScheduleDir('${g.path.replace(/\\/g, '\\\\')}')">
+            <i class="bi bi-folder-fill text-warning me-2"></i>
+            <div class="flex-fill">
+                <div class="fw-bold" style="font-size:0.82rem;">${g.name}</div>
+                <small class="text-muted">${info.join(' | ') || '空目录'}</small>
+            </div>
+            <i class="bi bi-box-arrow-up-right text-muted" style="font-size:0.75rem;"></i>
+        </div>`;
+    }).join('');
+}
+
+function filterScheduleDirs() {
+    const kw = document.getElementById('sched-filter').value.trim().toLowerCase();
+    if (!kw) { renderScheduleDirs(SCHED_DIRS); return; }
+    const filtered = SCHED_DIRS.filter(g => g.name.toLowerCase().includes(kw));
+    renderScheduleDirs(filtered);
+}
+
+async function openScheduleDir(path) {
+    try {
+        await App.api('/api/open-folder', { method: 'POST', body: { path } });
+    } catch(e) {
+        App.alert('打开失败: ' + e.message, 'danger');
+    }
+}
+
+// 页面加载时也检查待重试队列
+setTimeout(loadPendingRetries, 1000);
+// 自动加载文件状态
+setTimeout(loadFileStatus, 2000);
+// 加载排期分类
+setTimeout(loadScheduleDirs, 1500);
+// 每5分钟自动刷新文件状态
+setInterval(loadFileStatus, 300000);
+// 每2分钟检测文件变更
+setInterval(checkFileChangesQuiet, 120000);
+setTimeout(checkFileChangesQuiet, 5000);  // 首次5秒后建立基线
+
+async function checkFileChangesQuiet() {
+    try {
+        const data = await App.api('/api/file-changes');
+        const changes = data.changes || [];
+        if (changes.length > 0) {
+            const names = changes.map(c => c.file).join(', ');
+            const user = changes[0].user ? ` (${changes[0].user})` : '';
+            App.alert(`检测到 ${changes.length} 个排期文件被修改${user}：${names}`, 'warning');
+        }
+    } catch(e) {}
+}
+
+// ========== 路径浏览器 ==========
+let BROWSE_PATH = '';
+let pathModal = null;
+
+async function loadCurrentPath() {
+    try {
+        const data = await App.api('/api/current-path');
+        document.getElementById('current-path').value = data.path || '';
+        BROWSE_PATH = data.path || 'Z:\\各客排期';
+    } catch(e) {}
+}
+loadCurrentPath();
+
+function openPathBrowser() {
+    if (!pathModal) pathModal = new bootstrap.Modal(document.getElementById('pathModal'));
+    browseTo(BROWSE_PATH || 'Z:\\各客排期');
+    pathModal.show();
+}
+
+async function browseTo(path) {
+    BROWSE_PATH = path;
+    document.getElementById('browse-current').value = path;
+    const el = document.getElementById('browse-list');
+    el.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div> 加载中...</div>';
+    try {
+        const data = await App.api('/api/browse-dirs', { method: 'POST', body: { path } });
+        let html = '';
+        data.dirs.forEach(d => {
+            html += `<div class="browse-item dir" onclick="browseTo('${d.path.replace(/\\/g, '\\\\')}')">
+                <i class="bi bi-folder-fill text-warning me-2"></i>
+                <span>${d.name}</span>
+                <i class="bi bi-chevron-right ms-auto text-muted"></i>
+            </div>`;
+        });
+        if (data.files.length > 0) {
+            html += `<div class="browse-divider"><span>排期文件 (${data.files.length}个)</span></div>`;
+            data.files.slice(0, 20).forEach(f => {
+                html += `<div class="browse-item file">
+                    <i class="bi bi-file-earmark-spreadsheet text-success me-2"></i>
+                    <span class="text-muted">${f.name}</span>
+                </div>`;
+            });
+            if (data.files.length > 20) {
+                html += `<div class="text-muted text-center small py-1">...还有 ${data.files.length - 20} 个文件</div>`;
+            }
+        }
+        if (!html) html = '<div class="text-center py-3 text-muted">此目录为空</div>';
+        el.innerHTML = html;
+    } catch(e) {
+        el.innerHTML = `<div class="text-center py-3 text-danger">${e.message}</div>`;
+    }
+}
+
+function browseUp() {
+    const parts = BROWSE_PATH.replace(/\\$/, '').split('\\');
+    if (parts.length > 1) {
+        parts.pop();
+        browseTo(parts.join('\\'));
+    }
+}
+
+function browseCustomPath() {
+    const p = prompt('输入完整路径：', BROWSE_PATH);
+    if (p) browseTo(p.trim());
+}
+
+async function confirmPath() {
+    if (!BROWSE_PATH) return;
+    App.showLoading('正在切换排期路径...');
+    try {
+        await App.api('/api/set-schedule-path', { method: 'POST', body: { path: BROWSE_PATH } });
+        document.getElementById('current-path').value = BROWSE_PATH;
+        if (pathModal) pathModal.hide();
+        App.alert(`排期路径已切换到：${BROWSE_PATH}`, 'success');
+        loadDashboard();
+        loadFileStatus();
+    } catch(e) {
+        App.alert('切换失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+// ========== 撤回操作 ==========
+let _undoBatches = [];
+
+async function loadUndoInfo() {
+    try {
+        const data = await App.api('/api/undo-info');
+        const card = document.getElementById('undo-card');
+        const list = document.getElementById('undo-list');
+        _undoBatches = data.batches || [];
+        if (data.available && _undoBatches.length > 0) {
+            card.style.display = 'block';
+            let html = '';
+            for (const b of _undoBatches) {
+                const ops = (b.operations || []);
+                const typeIcons = {'new':'<span class="badge bg-success me-1">新增</span>',
+                                   'modify':'<span class="badge bg-primary me-1">修改</span>',
+                                   'cancel':'<span class="badge bg-danger me-1">取消</span>'};
+                let opsHtml = ops.map(op => {
+                    const icon = typeIcons[op.type] || `<span class="badge bg-secondary me-1">${op.type}</span>`;
+                    return `${icon}<b>${op.sku||''}</b> ${op.customer||''} ${op.qty ? op.qty+'pcs' : ''}`;
+                }).join('<br>');
+                if (!opsHtml) opsHtml = b.label || '操作详情不可用';
+                const files = (b.files||[]).map(f => f.name).join(', ');
+                html += `<div class="d-flex align-items-start gap-2 py-2 border-bottom" style="font-size:0.85rem;">
+                    <input type="checkbox" class="form-check-input mt-1 undo-check" value="${b.id}" checked
+                           style="min-width:18px;min-height:18px;">
+                    <div class="flex-fill">
+                        <div>${opsHtml}</div>
+                        <div class="text-muted" style="font-size:0.75rem;">
+                            <i class="bi bi-clock me-1"></i>${b.time}
+                            <span class="ms-2"><i class="bi bi-file-earmark me-1"></i>${files}</span>
+                        </div>
+                    </div>
+                </div>`;
+            }
+            list.innerHTML = html;
+        } else {
+            card.style.display = 'none';
+        }
+    } catch(e) { console.error('loadUndoInfo', e); }
+}
+setTimeout(loadUndoInfo, 2500);
+
+function toggleUndoAll() {
+    const checks = document.querySelectorAll('.undo-check');
+    const allChecked = Array.from(checks).every(c => c.checked);
+    checks.forEach(c => c.checked = !allChecked);
+}
+
+async function undoSelected() {
+    const checks = document.querySelectorAll('.undo-check:checked');
+    const ids = Array.from(checks).map(c => c.value);
+    if (ids.length === 0) {
+        App.alert('请先勾选要撤回的操作', 'warning');
+        return;
+    }
+    if (!confirm(`确认撤回选中的 ${ids.length} 项操作？\n\n将恢复修改前的排期文件。`)) return;
+    App.showLoading('正在撤回...');
+    try {
+        const result = await App.api('/api/undo-selected', {
+            method: 'POST', body: { batch_ids: ids }
+        });
+        if (result.error) {
+            App.alert(result.error, 'danger');
+        } else {
+            App.alert(result.msg, 'success');
+            loadUndoInfo();
+            loadDashboard();
+        }
+    } catch(e) {
+        App.alert('撤回失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+// 兼容旧函数名
+async function undoLast() { undoSelected(); }
+
+// ========== 删除已入单行 ==========
+let _lastBatchEntries = [];  // 存储上次入单的详细条目（用于删除和重入）
+let _lastBatchOrders = [];   // 存储上次的原始orders数据（用于重入）
+
+function showDeletePanel(entries, orders) {
+    _lastBatchEntries = entries || [];
+    _lastBatchOrders = orders || [];
+    const card = document.getElementById('delete-entries-card');
+    const list = document.getElementById('delete-entries-list');
+    const reCard = document.getElementById('reentry-card');
+    if (!_lastBatchEntries.length) {
+        card.style.display = 'none';
+        reCard.style.display = 'none';
+        return;
+    }
+    card.style.display = 'block';
+    reCard.style.display = 'block';
+    let html = '';
+    _lastBatchEntries.forEach((e, i) => {
+        const typeIcons = {'new':'<span class="badge bg-success me-1">新增</span>',
+                           'modify':'<span class="badge bg-primary me-1">修改</span>',
+                           'cancel':'<span class="badge bg-danger me-1">取消</span>'};
+        const icon = typeIcons[e.type] || '<span class="badge bg-secondary me-1">操作</span>';
+        html += `<div class="d-flex align-items-center gap-2 py-1 border-bottom" style="font-size:0.85rem;">
+            <input type="checkbox" class="form-check-input del-check" data-idx="${i}"
+                   style="min-width:18px;min-height:18px;">
+            <div class="flex-fill">
+                ${icon}<b>${e.sku || ''}</b>
+                <span class="text-muted ms-1">${e.file || ''} / ${e.sheet || ''} 行${e.row || '?'}</span>
+                ${e.customer ? `<span class="ms-1">${e.customer}</span>` : ''}
+                ${e.qty ? `<span class="ms-1">${e.qty}pcs</span>` : ''}
+            </div>
+        </div>`;
+    });
+    list.innerHTML = html;
+    // 加载定时任务状态
+    loadScheduledInfo();
+}
+
+function toggleDeleteAll() {
+    const checks = document.querySelectorAll('.del-check');
+    const allChecked = Array.from(checks).every(c => c.checked);
+    checks.forEach(c => c.checked = !allChecked);
+}
+
+async function deleteSelectedEntries() {
+    const checks = document.querySelectorAll('.del-check:checked');
+    const indices = Array.from(checks).map(c => parseInt(c.dataset.idx));
+    if (indices.length === 0) {
+        App.alert('请先勾选要删除的行', 'warning');
+        return;
+    }
+    const entries = indices.map(i => _lastBatchEntries[i]).filter(e => e && e.file && e.sheet && e.row);
+    if (entries.length === 0) {
+        App.alert('选中的条目缺少文件/行号信息，无法删除', 'warning');
+        return;
+    }
+    if (!confirm(`确认删除选中的 ${entries.length} 行？\n\n删除后可在"可撤回的操作"中恢复。`)) return;
+
+    App.showLoading('正在删除...');
+    try {
+        const result = await App.api('/api/delete-entries', {
+            method: 'POST',
+            body: { entries: entries }
+        });
+        if (result.error) {
+            App.alert(result.error, 'danger');
+        } else {
+            let msg = `<i class="bi bi-check-circle text-success me-1"></i>${result.msg}`;
+            if (result.deleted && result.deleted.length > 0) {
+                result.deleted.forEach(d => {
+                    msg += `<br><small class="text-muted ms-3">- ${d.sku} (${d.file}/${d.sheet} 行${d.row})</small>`;
+                });
+            }
+            App.alert(msg, 'success');
+            // 从列表中移除已删除的行
+            const deletedSkus = new Set((result.deleted || []).map(d => d.sku));
+            _lastBatchEntries = _lastBatchEntries.filter((e, i) => !indices.includes(i) || !deletedSkus.has(e.sku));
+            showDeletePanel(_lastBatchEntries, _lastBatchOrders);
+            loadUndoInfo();
+        }
+    } catch(e) {
+        App.alert('删除失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+// ========== 一键重新入单 + 定时 ==========
+
+async function reentryNow() {
+    if (!_lastBatchOrders.length) {
+        App.alert('没有可重入的订单数据，请重新上传PDF', 'warning');
+        return;
+    }
+    if (!confirm('确认立即重新入单？\n\n将使用最新代码重新处理并写入排期。')) return;
+
+    App.showLoading('正在重新入单...');
+    const resultDiv = document.getElementById('reentry-result');
+    try {
+        const data = await App.api('/api/reentry', {
+            method: 'POST',
+            body: { orders: _lastBatchOrders.filter(o => o.type !== 'error') }
+        });
+        const results = data.results || [];
+        const failed = data.failed || [];
+        let html = `<div class="alert ${failed.length ? 'alert-warning' : 'alert-success'} py-2 mb-0" style="font-size:0.85rem;">`;
+        html += `<b>重入完成</b> (${data.elapsed_seconds || 0}秒)`;
+        results.forEach(r => {
+            const msg = r.msg || '';
+            const warnMatch = msg.match(/\[空字段:\s*([^\]]+)\]/g);
+            const cleanMsg = msg.replace(/\s*\[空字段:[^\]]+\]/g, '');
+            html += `<div class="mt-1"><i class="bi bi-check2 text-success me-1"></i><b>${r.file}</b>: ${cleanMsg}`;
+            if (r.z_saved) html += ` <span class="badge bg-success">已保存Z盘</span>`;
+            html += '</div>';
+            if (warnMatch) {
+                warnMatch.forEach(w => {
+                    const fields = w.replace('[空字段:', '').replace(']', '').trim();
+                    html += `<div class="text-danger ms-3"><i class="bi bi-exclamation-triangle-fill me-1"></i><b>未填字段：</b>${fields}</div>`;
+                });
+            }
+        });
+        failed.forEach(f => {
+            html += `<div class="mt-1 text-danger"><i class="bi bi-x-circle me-1"></i><b>${f.file}</b>: ${f.reason || f.msg || '失败'}</div>`;
+        });
+        html += '</div>';
+        resultDiv.innerHTML = html;
+        resultDiv.style.display = 'block';
+        loadUndoInfo();
+        loadDashboard();
+    } catch(e) {
+        resultDiv.innerHTML = `<div class="alert alert-danger py-2 mb-0">${e.message}</div>`;
+        resultDiv.style.display = 'block';
+    } finally { App.hideLoading(); }
+}
+
+async function scheduleReentry() {
+    const timeInput = document.getElementById('schedule-time');
+    const time = timeInput.value;
+    if (!time) {
+        App.alert('请选择定时时间', 'warning');
+        return;
+    }
+    if (!_lastBatchOrders.length) {
+        App.alert('没有可重入的订单数据', 'warning');
+        return;
+    }
+    try {
+        const result = await App.api('/api/schedule-retry', {
+            method: 'POST',
+            body: {
+                time: time,
+                orders: _lastBatchOrders.filter(o => o.type !== 'error'),
+                label: `定时重入 (${_lastBatchOrders.length}单)`
+            }
+        });
+        if (result.error) {
+            App.alert(result.error, 'danger');
+        } else {
+            App.alert(result.msg, 'success');
+            loadScheduledInfo();
+        }
+    } catch(e) {
+        App.alert('定时设置失败: ' + e.message, 'danger');
+    }
+}
+
+async function loadScheduledInfo() {
+    const div = document.getElementById('scheduled-info');
+    try {
+        const items = await App.api('/api/scheduled-retries');
+        const pending = (items || []).filter(i => i.status === 'pending');
+        if (pending.length === 0) {
+            div.style.display = 'none';
+            return;
+        }
+        let html = '<div class="small">';
+        pending.forEach(item => {
+            html += `<div class="d-flex align-items-center gap-2 py-1 border-bottom">
+                <i class="bi bi-clock text-primary"></i>
+                <span>${item.label || '定时任务'}</span>
+                <span class="badge bg-primary">${item.time}</span>
+                <button class="btn btn-outline-danger btn-sm ms-auto" onclick="cancelScheduled('${item.id}')" style="padding:0 6px;">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>`;
+        });
+        html += '</div>';
+        div.innerHTML = html;
+        div.style.display = 'block';
+    } catch(e) {
+        div.style.display = 'none';
+    }
+}
+
+async function cancelScheduled(id) {
+    await App.api('/api/cancel-scheduled', { method: 'POST', body: { id } });
+    loadScheduledInfo();
+    App.alert('已取消定时任务', 'info');
+}
+
+// ========== 总排期操作 ==========
+let YELLOW_ROWS = [];
+
+async function loadMasterInfo() {
+    const el = document.getElementById('master-status');
+    try {
+        const data = await App.api('/api/master-info');
+        if (!data.exists) {
+            el.innerHTML = '<div class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>未找到总排期文件</div>';
+            return;
+        }
+        const lockIcon = data.locked
+            ? '<span class="badge bg-danger"><i class="bi bi-lock-fill me-1"></i>被占用</span>'
+            : '<span class="badge bg-success"><i class="bi bi-unlock-fill me-1"></i>可写入</span>';
+        el.innerHTML = `<div class="d-flex align-items-center gap-2">
+            <i class="bi bi-file-earmark-spreadsheet text-purple"></i>
+            <span class="fw-bold">${data.file}</span>
+            ${lockIcon}
+        </div>`;
+    } catch(e) {
+        el.innerHTML = '<div class="text-danger small">加载失败</div>';
+    }
+}
+setTimeout(loadMasterInfo, 3000);
+
+async function scanYellowRows() {
+    App.showLoading('正在扫描分排期中的黄色填充行...\n（需要逐文件读取格式，可能较慢）');
+    try {
+        const data = await App.api('/api/scan-yellow', { method: 'POST', body: {} });
+        YELLOW_ROWS = data.rows || [];
+        const preview = document.getElementById('yellow-preview');
+        const btn = document.getElementById('btn-copy-master');
+        if (YELLOW_ROWS.length === 0) {
+            preview.style.display = 'block';
+            preview.innerHTML = '<div class="text-center py-2 text-muted small">未找到黄色填充的行</div>';
+            btn.disabled = true;
+            App.alert('未找到黄色填充的行', 'info');
+            return;
+        }
+        btn.disabled = false;
+        // 按文件分组显示
+        const grouped = {};
+        YELLOW_ROWS.forEach(r => {
+            const key = r.fname;
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(r);
+        });
+        let html = `<div class="fw-bold text-success mb-1" style="font-size:0.82rem;">
+            <i class="bi bi-check-circle me-1"></i>找到 ${YELLOW_ROWS.length} 行黄色填充</div>`;
+        for (const [fname, rows] of Object.entries(grouped)) {
+            html += `<div class="d-flex align-items-center gap-1 mb-1" style="font-size:0.78rem;">
+                <i class="bi bi-file-earmark text-warning"></i>
+                <b>${fname}</b>
+                <span class="badge bg-warning text-dark">${rows.length}行</span>
+            </div>`;
+            rows.slice(0, 3).forEach(r => {
+                const po = r.data.D || '';
+                const sku = r.data.F || r.data.G || '';
+                html += `<div style="font-size:0.72rem;color:#64748b;margin-left:20px;">
+                    ${r.sheet} 行${r.row} | PO:${po} | ${sku}
+                </div>`;
+            });
+            if (rows.length > 3) {
+                html += `<div style="font-size:0.68rem;color:#94a3b8;margin-left:20px;">...还有${rows.length-3}行</div>`;
+            }
+        }
+        preview.style.display = 'block';
+        preview.innerHTML = html;
+        App.alert(`找到 ${YELLOW_ROWS.length} 行黄色填充，可点击"一键录入总排期"`, 'success');
+    } catch(e) {
+        App.alert('扫描失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+async function copyToMaster() {
+    if (!confirm(`确认将 ${YELLOW_ROWS.length} 行黄色填充数据复制到总排期？\n\n- 数据不会发生变化\n- 复制后在总排期中显示为黄色填充\n- 仅总排期需要可写`)) return;
+    App.showLoading('正在通过COM写入总排期...');
+    try {
+        const result = await App.api('/api/copy-to-master', { method: 'POST', body: {} });
+        if (result.error) {
+            App.alert(result.error, 'danger');
+        } else {
+            App.alert(result.msg, 'success');
+            document.getElementById('yellow-preview').style.display = 'none';
+            document.getElementById('btn-copy-master').disabled = true;
+            YELLOW_ROWS = [];
+            loadMasterInfo();
+        }
+    } catch(e) {
+        App.alert('录入失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+async function clearMasterYellow() {
+    if (!confirm('确认清除总排期中所有黄色填充行的填充色？\n\n行数据不会删除，仅去掉黄色底色。')) return;
+    App.showLoading('正在清除总排期黄色填充...');
+    try {
+        const result = await App.api('/api/clear-master-yellow', { method: 'POST', body: {} });
+        if (result.error) {
+            App.alert(result.error, 'danger');
+        } else {
+            App.alert(result.msg, 'success');
+            loadMasterInfo();
+        }
+    } catch(e) {
+        App.alert('清除失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+// ========== 手动选择排期 ==========
+let _manualModal = null;
+async function openManualAssign() {
+    if (!_manualModal) _manualModal = new bootstrap.Modal(document.getElementById('manualAssignModal'));
+    _manualModal.show();
+    const el = document.getElementById('manual-file-list');
+    el.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div> 加载中...</div>';
+    try {
+        const files = await App.api('/api/list-schedules');
+        if (!files.length) {
+            el.innerHTML = '<div class="text-center py-3 text-muted">未找到排期文件</div>';
+            return;
+        }
+        // 找到未匹配的SKU列表
+        const unmatched = [];
+        ORDERS.forEach(o => {
+            (o.actions || []).forEach(a => {
+                if (a.type === 'new' && !a.schedule) {
+                    unmatched.push({order: o, action: a, sku: a.sku || a.line?.sku || '?'});
+                }
+            });
+        });
+        let html = '';
+        if (unmatched.length > 0) {
+            html += '<div class="alert alert-warning py-1 mb-2" style="font-size:0.82rem;"><b>待指定的SKU：</b> ' +
+                unmatched.map(u => u.sku).join(', ') + '</div>';
+        }
+        files.forEach(f => {
+            const short = f.fname.length > 45 ? f.fname.substring(0, 45) + '...' : f.fname;
+            html += `<div class="border-bottom py-2">
+                <div class="fw-bold" style="font-size:0.82rem;"><i class="bi bi-file-earmark-spreadsheet text-success me-1"></i>${short}</div>
+                <div class="d-flex flex-wrap gap-1 mt-1">`;
+            f.sheets.forEach(s => {
+                html += `<button class="btn btn-sm btn-outline-primary" onclick="assignSchedule('${f.file.replace(/\\/g,'\\\\\\\\')}','${s}')" style="font-size:0.7rem;">${s}</button>`;
+            });
+            html += '</div></div>';
+        });
+        el.innerHTML = html;
+    } catch(e) {
+        el.innerHTML = `<div class="text-center py-3 text-danger">${e.message}</div>`;
+    }
+}
+
+async function assignSchedule(filepath, sheet) {
+    App.showLoading('正在匹配...');
+    try {
+        const sched = await App.api('/api/manual-assign', {
+            method: 'POST', body: { file: filepath, sheet }
+        });
+        if (sched.error) { App.alert(sched.error, 'danger'); return; }
+        // 将排期信息赋给未匹配的action
+        let assigned = 0;
+        ORDERS.forEach(o => {
+            (o.actions || []).forEach(a => {
+                if (a.type === 'new' && !a.schedule) {
+                    a.schedule = sched;
+                    assigned++;
+                }
+            });
+        });
+        if (_manualModal) _manualModal.hide();
+        App.alert(`已指定 ${assigned} 个SKU到 ${sheet}`, 'success');
+        renderOrders();
+    } catch(e) {
+        App.alert('指定失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+// ========== 排期同步 ==========
+async function syncSchedules() {
+    const curPath = document.getElementById('current-path').value;
+    if (!curPath) { App.alert('请先设置排期路径', 'warning'); return; }
+    if (!confirm(`确认同步Z盘排期到本地？\n\n源：Z:\\各客排期\\ZURU生产排期\n目标：${curPath}\n\n将复制新文件、更新已修改文件、删除多余文件。`)) return;
+    App.showLoading('正在同步排期文件...');
+    try {
+        const data = await App.api('/api/sync-schedules', {
+            method: 'POST',
+            body: { source: 'Z:\\各客排期\\ZURU生产排期', dest: curPath }
+        });
+        let msg = `同步完成！`;
+        if (data.copied) msg += ` 新增${data.copied}个`;
+        if (data.updated) msg += ` 更新${data.updated}个`;
+        if (data.deleted) msg += ` 删除${data.deleted}个`;
+        if (data.skipped) msg += ` 跳过${data.skipped}个`;
+        if (!data.copied && !data.updated && !data.deleted) msg += ' 所有文件已是最新';
+        App.alert(msg, 'success');
+        loadFileStatus();
+        loadDashboard();
+    } catch(e) {
+        App.alert('同步失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+</script>
+{% endblock %}

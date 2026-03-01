@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}操作历史{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>PO操作历史记录</h5>
+    <div class="d-flex gap-2 align-items-center">
+        <small class="text-muted">记录精确到分钟，不可删除</small>
+        <a href="{{ url_for('export_history') }}" class="btn btn-sm btn-success" download>
+            <i class="bi bi-file-earmark-excel me-1"></i>导出Excel
+        </a>
+    </div>
+</div>
+
+<div class="card glass-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="input-group" style="max-width:300px;">
+            <input type="text" id="filter-input" class="form-control form-control-sm"
+                   placeholder="搜索PO号或关键词..." oninput="filterHistory()">
+            <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('filter-input').value='';filterHistory()">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <select id="filter-type" class="form-select form-select-sm" style="width:100px;" onchange="filterHistory()">
+                <option value="">全部类型</option>
+                <option value="new">新增</option>
+                <option value="modify">修改</option>
+                <option value="cancel">取消</option>
+                <option value="auto_retry">自动重试</option>
+            </select>
+            <span class="badge bg-primary" id="total-count">0 条记录</span>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" style="font-size:0.85rem;">
+                <thead>
+                    <tr>
+                        <th style="width:140px;">时间</th>
+                        <th style="width:80px;">操作</th>
+                        <th style="width:130px;">PO号</th>
+                        <th>详情</th>
+                        <th style="width:200px;">文件</th>
+                    </tr>
+                </thead>
+                <tbody id="history-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let ALL_HISTORY = [];
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        ALL_HISTORY = await App.api('/api/history');
+        renderHistory(ALL_HISTORY);
+    } catch (e) {
+        document.getElementById('history-body').innerHTML =
+            '<tr><td colspan="5" class="text-center text-muted py-3">加载失败</td></tr>';
+    }
+});
+
+function renderHistory(data) {
+    document.getElementById('total-count').textContent = data.length + ' 条记录';
+    if (!data.length) {
+        document.getElementById('history-body').innerHTML =
+            '<tr><td colspan="5" class="text-center text-muted py-3">暂无记录</td></tr>';
+        return;
+    }
+    document.getElementById('history-body').innerHTML = data.slice().reverse().map(h => {
+        const badge = h.action === 'cancel' ? 'bg-danger' :
+                      h.action === 'modify' ? 'bg-warning text-dark' :
+                      h.action === 'auto_retry' ? 'bg-info' : 'bg-success';
+        return `<tr>
+            <td class="text-muted">${h.time}</td>
+            <td><span class="badge ${badge}">${h.action}</span></td>
+            <td class="fw-bold">${h.po || ''}</td>
+            <td>${h.detail || ''}</td>
+            <td class="text-muted small">${h.files || ''}</td>
+        </tr>`;
+    }).join('');
+}
+
+function filterHistory() {
+    const q = document.getElementById('filter-input').value.trim().toLowerCase();
+    const typeFilter = document.getElementById('filter-type').value;
+    let filtered = ALL_HISTORY;
+    if (typeFilter) {
+        filtered = filtered.filter(h => h.action === typeFilter);
+    }
+    if (q) {
+        filtered = filtered.filter(h =>
+            (h.po || '').toLowerCase().includes(q) ||
+            (h.detail || '').toLowerCase().includes(q) ||
+            (h.action || '').toLowerCase().includes(q) ||
+            (h.files || '').toLowerCase().includes(q)
+        );
+    }
+    renderHistory(filtered);
+}
+</script>
+{% endblock %}

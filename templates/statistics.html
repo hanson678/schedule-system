@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}统计仪表盘{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-bar-chart-line me-2"></i>统计仪表盘</h5>
+    <button class="btn btn-sm btn-outline-primary" onclick="loadStats()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<!-- 总览卡片 -->
+<div class="row g-3 mb-3">
+    <div class="col">
+        <div class="stat-card blue">
+            <div class="stat-num" id="s-total">-</div>
+            <div class="stat-label">总操作数</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card green">
+            <div class="stat-num" id="s-new">-</div>
+            <div class="stat-label">新增录入</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card orange">
+            <div class="stat-num" id="s-modify">-</div>
+            <div class="stat-label">修改单</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card red">
+            <div class="stat-num" id="s-cancel">-</div>
+            <div class="stat-label">取消单</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- 月度趋势 -->
+    <div class="col-lg-8">
+        <div class="card glass-card mb-3">
+            <div class="card-header"><i class="bi bi-calendar3 me-2"></i>月度趋势</div>
+            <div class="card-body">
+                <div id="monthly-chart" style="min-height:200px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 操作类型分布 -->
+    <div class="col-lg-4">
+        <div class="card glass-card mb-3">
+            <div class="card-header"><i class="bi bi-pie-chart me-2"></i>操作类型分布</div>
+            <div class="card-body">
+                <div id="action-chart"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 产品线排名 -->
+    <div class="col-lg-6">
+        <div class="card glass-card mb-3">
+            <div class="card-header"><i class="bi bi-trophy me-2"></i>产品线排名 TOP 15</div>
+            <div class="card-body p-0">
+                <div id="product-list" style="max-height:400px;overflow-y:auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 工作表排名 -->
+    <div class="col-lg-6">
+        <div class="card glass-card mb-3">
+            <div class="card-header"><i class="bi bi-list-ol me-2"></i>录入目标排名 TOP 15</div>
+            <div class="card-body p-0">
+                <div id="target-list" style="max-height:400px;overflow-y:auto;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadStats() {
+    try {
+        const data = await App.api('/api/statistics');
+        // 总览
+        document.getElementById('s-total').textContent = data.total;
+        document.getElementById('s-new').textContent = data.by_action.new || 0;
+        document.getElementById('s-modify').textContent = data.by_action.modify || 0;
+        document.getElementById('s-cancel').textContent = data.by_action.cancel || 0;
+
+        // 月度趋势
+        renderMonthly(data.monthly || []);
+        // 操作类型饼图
+        renderActionPie(data.by_action || {});
+        // 产品线
+        renderRanking('product-list', data.by_product || [], 'primary');
+        // 目标
+        renderRanking('target-list', data.by_target || [], 'success');
+    } catch(e) {
+        App.alert('加载统计失败: ' + e.message, 'danger');
+    }
+}
+
+function renderMonthly(monthly) {
+    const el = document.getElementById('monthly-chart');
+    if (!monthly.length) {
+        el.innerHTML = '<div class="text-center text-muted py-4">暂无月度数据</div>';
+        return;
+    }
+    const reversed = [...monthly].reverse();
+    const maxVal = Math.max(...reversed.map(m => m.total), 1);
+    let html = '<div class="d-flex align-items-end gap-1" style="height:180px;padding-top:10px;">';
+    reversed.forEach(m => {
+        const h = Math.max(Math.round(m.total / maxVal * 150), 4);
+        const newH = Math.max(Math.round(m.new / maxVal * 150), 0);
+        const modH = Math.max(Math.round(m.modify / maxVal * 150), 0);
+        const canH = Math.max(Math.round(m.cancel / maxVal * 150), 0);
+        html += `<div class="d-flex flex-column align-items-center flex-fill" style="min-width:30px;">
+            <small class="text-muted mb-1" style="font-size:0.65rem;">${m.total}</small>
+            <div style="width:100%;max-width:40px;">
+                ${canH ? `<div style="height:${canH}px;background:#f87171;border-radius:3px 3px 0 0;"></div>` : ''}
+                ${modH ? `<div style="height:${modH}px;background:#fbbf24;"></div>` : ''}
+                ${newH ? `<div style="height:${newH}px;background:#34d399;border-radius:0 0 3px 3px;"></div>` : ''}
+            </div>
+            <small style="font-size:0.6rem;color:#94a3b8;margin-top:4px;">${m.month.slice(5)}</small>
+        </div>`;
+    });
+    html += '</div>';
+    html += '<div class="d-flex gap-3 mt-2 justify-content-center" style="font-size:0.72rem;">';
+    html += '<span><span style="display:inline-block;width:10px;height:10px;background:#34d399;border-radius:2px;"></span> 新增</span>';
+    html += '<span><span style="display:inline-block;width:10px;height:10px;background:#fbbf24;border-radius:2px;"></span> 修改</span>';
+    html += '<span><span style="display:inline-block;width:10px;height:10px;background:#f87171;border-radius:2px;"></span> 取消</span>';
+    html += '</div>';
+    el.innerHTML = html;
+}
+
+function renderActionPie(actions) {
+    const el = document.getElementById('action-chart');
+    const total = Object.values(actions).reduce((a, b) => a + b, 0) || 1;
+    const items = [
+        {name: '新增', val: actions.new || 0, color: '#34d399'},
+        {name: '修改', val: actions.modify || 0, color: '#fbbf24'},
+        {name: '取消', val: actions.cancel || 0, color: '#f87171'},
+        {name: '自动重试', val: actions.auto_retry || 0, color: '#60a5fa'},
+    ].filter(i => i.val > 0);
+
+    let html = '';
+    items.forEach(item => {
+        const pct = Math.round(item.val / total * 100);
+        html += `<div class="d-flex align-items-center gap-2 mb-2">
+            <span style="width:10px;height:10px;background:${item.color};border-radius:50%;flex-shrink:0;"></span>
+            <span style="font-size:0.82rem;flex:1;">${item.name}</span>
+            <span class="fw-bold" style="font-size:0.85rem;">${item.val}</span>
+            <div style="width:80px;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+                <div style="width:${pct}%;height:100%;background:${item.color};border-radius:4px;"></div>
+            </div>
+            <span class="text-muted" style="font-size:0.72rem;width:30px;text-align:right;">${pct}%</span>
+        </div>`;
+    });
+    el.innerHTML = html || '<div class="text-center text-muted py-3">暂无数据</div>';
+}
+
+function renderRanking(elId, items, colorClass) {
+    const el = document.getElementById(elId);
+    if (!items.length) {
+        el.innerHTML = '<div class="text-center text-muted py-3 small">暂无数据</div>';
+        return;
+    }
+    const maxVal = items[0].count;
+    el.innerHTML = items.slice(0, 15).map((item, i) => {
+        const pct = Math.round(item.count / maxVal * 100);
+        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}`;
+        return `<div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom" style="font-size:0.82rem;">
+            <span style="width:24px;text-align:center;font-size:${i < 3 ? '1rem' : '0.75rem'};color:${i < 3 ? '' : '#94a3b8'};">${medal}</span>
+            <span class="flex-fill text-truncate" title="${item.name}">${item.name}</span>
+            <span class="fw-bold">${item.count}</span>
+            <div style="width:60px;height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+                <div style="width:${pct}%;height:100%;background:var(--bs-${colorClass});border-radius:3px;"></div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', loadStats);
+</script>
+{% endblock %}

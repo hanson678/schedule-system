@@ -1,0 +1,382 @@
+{% extends "base.html" %}
+{% block title %}设置{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <!-- 左列：基本设置 + 邮箱设置 -->
+    <div class="col-lg-6">
+        <div class="card glass-card mb-3">
+            <div class="card-header"><i class="bi bi-gear me-2"></i>基本设置</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Z盘排期路径</label>
+                    <input type="text" class="form-control" id="z-path"
+                           value="{{ config.z_drive_path }}">
+                    <small class="text-muted">共享磁盘上排期文件所在目录</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">默认跟单人</label>
+                    <input type="text" class="form-control" id="default-person"
+                           value="{{ config.get('default_person', '') }}" placeholder="如: 张三">
+                    <small class="text-muted">新录入时自动填入的跟单人</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">自动重试间隔（秒）</label>
+                    <input type="number" class="form-control" id="retry-interval"
+                           value="{{ config.get('retry_interval', 180) }}" min="30" max="600">
+                </div>
+                <button class="btn btn-primary" onclick="saveConfig()">
+                    <i class="bi bi-check-lg me-1"></i>保存基本设置
+                </button>
+            </div>
+        </div>
+
+        <!-- 邮箱设置 -->
+        <div class="card glass-card mb-3">
+            <div class="card-header"><i class="bi bi-envelope me-2"></i>邮箱集成 (IMAP)</div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <label class="form-label fw-bold">IMAP服务器</label>
+                    <input type="text" class="form-control" id="email-server" placeholder="如: imap.qq.com">
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-8">
+                        <label class="form-label fw-bold">邮箱账号</label>
+                        <input type="text" class="form-control" id="email-user" placeholder="sales11@hanson2.com">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label fw-bold">端口</label>
+                        <input type="number" class="form-control" id="email-port" value="993">
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-bold">密码/授权码</label>
+                    <input type="password" class="form-control" id="email-password" placeholder="IMAP授权码">
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="email-ssl" checked>
+                    <label class="form-check-label">使用SSL加密</label>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" onclick="saveEmailSettings()">
+                        <i class="bi bi-check-lg me-1"></i>保存邮箱设置
+                    </button>
+                    <button class="btn btn-outline-success" onclick="testEmail()">
+                        <i class="bi bi-envelope-check me-1"></i>测试连接
+                    </button>
+                </div>
+                <div id="email-test-result" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右列：系统信息 + SKU映射 + 列映射 -->
+    <div class="col-lg-6">
+        <div class="card glass-card mb-3">
+            <div class="card-header"><i class="bi bi-info-circle me-2"></i>系统信息</div>
+            <div class="card-body">
+                <table class="table table-sm mb-0" style="font-size:0.85rem;">
+                    <tr><td class="text-muted">版本</td><td>v5.0 SKU映射 + 缓存</td></tr>
+                    <tr><td class="text-muted">写入引擎</td><td>WPS COM (Ket.Application)</td></tr>
+                    <tr><td class="text-muted">特性</td><td>SKU映射 / 黄色扫描缓存 / 模糊搜索 / 邮件集成</td></tr>
+                    <tr><td class="text-muted">新录入底色</td><td><span style="background:#00B0F0;color:white;padding:1px 8px;border-radius:4px;">FF00B0F0</span></td></tr>
+                    <tr><td class="text-muted">修改标红</td><td><span style="color:#FF0000;font-weight:bold;">FFFF0000 红色字体</span></td></tr>
+                    <tr><td class="text-muted">取消规则</td><td>复制到分排期取消Sheet + 红字蓝底 + 删原行</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- SKU映射信息 + 编辑 -->
+        <div class="card glass-card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-diagram-3 me-2 text-primary"></i>SKU→排期映射表</span>
+                <div class="d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-success" onclick="showAddMapping()" style="font-size:0.72rem;">
+                        <i class="bi bi-plus-lg me-1"></i>新增
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="refreshMapping()" style="font-size:0.72rem;">
+                        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- 新增/编辑表单 -->
+                <div id="mapping-edit-form" style="display:none;" class="mb-3 p-2" style="background:#f0f9ff;border-radius:8px;">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-3">
+                            <label class="form-label small fw-bold">SKU/货号</label>
+                            <input type="text" class="form-control form-control-sm" id="edit-sku" placeholder="如 MEC356">
+                        </div>
+                        <div class="col-5">
+                            <label class="form-label small fw-bold">排期关键词（逗号分隔）</label>
+                            <input type="text" class="form-control form-control-sm" id="edit-keywords" placeholder="如 77711,77673">
+                        </div>
+                        <div class="col-4 d-flex gap-1">
+                            <button class="btn btn-sm btn-primary flex-fill" onclick="saveMapping()">
+                                <i class="bi bi-check-lg"></i> 保存
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="hideEditForm()">取消</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 搜索 -->
+                <div class="input-group mb-2">
+                    <input type="text" class="form-control form-control-sm" id="mapping-search"
+                           placeholder="搜索SKU或关键词..." oninput="filterMappingDisplay()">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('mapping-search').value='';filterMappingDisplay();">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+                <div id="mapping-info" style="max-height:350px;overflow-y:auto;">
+                    <div class="text-center py-2 text-muted small">加载中...</div>
+                </div>
+            </div>
+            <div class="card-footer py-1">
+                <small class="text-muted">数据来源：data/sku_mapping.json | 支持在线编辑</small>
+            </div>
+        </div>
+
+        <!-- 文件变更监控 -->
+        <div class="card glass-card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-eye me-2 text-info"></i>文件变更监控</span>
+                <button class="btn btn-sm btn-outline-info" onclick="checkFileChanges()" style="font-size:0.72rem;">
+                    <i class="bi bi-arrow-clockwise me-1"></i>检查变更
+                </button>
+            </div>
+            <div class="card-body py-2" id="file-changes-list">
+                <div class="text-center py-2 text-muted small">
+                    点击"检查变更"扫描Z盘文件修改情况<br>
+                    <small>首次点击建立基线，第二次开始显示变更</small>
+                </div>
+            </div>
+            <div class="card-footer py-1">
+                <small class="text-muted" id="file-changes-summary">检测Z盘排期文件被他人修改的情况</small>
+            </div>
+        </div>
+
+        <!-- 排期列对照 -->
+        <div class="card glass-card mb-3">
+            <div class="card-header"><i class="bi bi-layout-three-columns me-2"></i>分排期列对照</div>
+            <div class="card-body" style="font-size:0.82rem;">
+                <div class="row g-1">
+                    <div class="col-4">A = 接单日期</div>
+                    <div class="col-4">B = 客户名</div>
+                    <div class="col-4">C = 目的地</div>
+                    <div class="col-4">D = PO号</div>
+                    <div class="col-4">E = 客户PO</div>
+                    <div class="col-4">F = SKU</div>
+                    <div class="col-4">I = 数量</div>
+                    <div class="col-4">K = 外箱装量</div>
+                    <div class="col-4">L = 箱数(公式)</div>
+                    <div class="col-4">M = 出货日期</div>
+                    <div class="col-4">N = 验货日期</div>
+                    <div class="col-4">W = 备注</div>
+                    <div class="col-4">X = 跟单人</div>
+                    <div class="col-4">Y = 单价</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function saveConfig() {
+    try {
+        await App.api('/api/config', {
+            method: 'POST',
+            body: {
+                z_drive_path: document.getElementById('z-path').value.trim(),
+                default_person: document.getElementById('default-person').value.trim(),
+                retry_interval: parseInt(document.getElementById('retry-interval').value) || 180,
+            }
+        });
+        App.alert('基本设置已保存');
+    } catch(e) {
+        App.alert('保存失败: ' + e.message, 'danger');
+    }
+}
+
+// 邮箱设置
+async function loadEmailSettings() {
+    try {
+        const data = await App.api('/api/email/settings');
+        document.getElementById('email-server').value = data.server || '';
+        document.getElementById('email-port').value = data.port || 993;
+        document.getElementById('email-user').value = data.user || '';
+        document.getElementById('email-ssl').checked = data.ssl !== false;
+    } catch(e) {}
+}
+loadEmailSettings();
+
+async function saveEmailSettings() {
+    try {
+        await App.api('/api/email/settings', {
+            method: 'POST',
+            body: {
+                server: document.getElementById('email-server').value.trim(),
+                port: parseInt(document.getElementById('email-port').value) || 993,
+                user: document.getElementById('email-user').value.trim(),
+                password: document.getElementById('email-password').value,
+                ssl: document.getElementById('email-ssl').checked,
+            }
+        });
+        App.alert('邮箱设置已保存');
+    } catch(e) {
+        App.alert('保存失败: ' + e.message, 'danger');
+    }
+}
+
+async function testEmail() {
+    const el = document.getElementById('email-test-result');
+    el.innerHTML = '<div class="text-muted small"><div class="spinner-border spinner-border-sm me-1"></div>正在连接...</div>';
+    try {
+        // 先保存再测试
+        await saveEmailSettings();
+        const data = await App.api('/api/email/check', { method: 'POST', body: {} });
+        if (data.error) {
+            el.innerHTML = `<div class="alert alert-danger py-1 small">${data.error}</div>`;
+        } else {
+            el.innerHTML = `<div class="alert alert-success py-1 small">连接成功！发现 ${data.count || 0} 封含PDF附件的新邮件</div>`;
+        }
+    } catch(e) {
+        el.innerHTML = `<div class="alert alert-danger py-1 small">${e.message}</div>`;
+    }
+}
+
+// SKU映射
+let ALL_MAPPING_DATA = null;
+async function loadMapping() {
+    try {
+        const data = await App.api('/api/sku-mapping');
+        ALL_MAPPING_DATA = data;
+        renderMappingDisplay(data);
+    } catch(e) {
+        document.getElementById('mapping-info').innerHTML = `<div class="text-danger small">${e.message}</div>`;
+    }
+}
+setTimeout(loadMapping, 500);
+
+function renderMappingDisplay(data) {
+    const el = document.getElementById('mapping-info');
+    if (!data || !data.total) {
+        el.innerHTML = '<div class="text-warning small"><i class="bi bi-exclamation-triangle me-1"></i>未找到映射数据</div>';
+        return;
+    }
+    let html = `<div class="d-flex gap-3 mb-2">
+        <span class="badge bg-primary">${data.total} 个SKU</span>
+        <span class="badge bg-success">${data.groups} 组排期</span>
+    </div>`;
+    (data.detail || []).forEach(g => {
+        html += `<div class="mb-2 p-2" style="background:#f8fafc;border-radius:8px;font-size:0.78rem;">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-bold text-primary"><i class="bi bi-file-earmark me-1"></i>#${g.keywords.join(' #')} <span class="badge bg-primary bg-opacity-10 text-primary">${g.count}个</span></span>
+            </div>
+            <div class="text-muted mt-1" style="word-break:break-all;">${g.skus.map(s =>
+                `<span class="badge bg-light text-dark border me-1 mb-1" style="font-size:0.7rem;cursor:pointer;" onclick="editSku('${s}','${g.keywords.join(',')}')" title="点击编辑">${s} <i class="bi bi-pencil" style="font-size:0.55rem;"></i></span>`
+            ).join('')}</div>
+        </div>`;
+    });
+    el.innerHTML = html;
+}
+
+function filterMappingDisplay() {
+    if (!ALL_MAPPING_DATA) return;
+    const q = document.getElementById('mapping-search').value.trim().toLowerCase();
+    if (!q) { renderMappingDisplay(ALL_MAPPING_DATA); return; }
+    const filtered = {
+        ...ALL_MAPPING_DATA,
+        detail: (ALL_MAPPING_DATA.detail || []).filter(g =>
+            g.skus.some(s => s.toLowerCase().includes(q)) ||
+            g.keywords.some(k => k.toLowerCase().includes(q))
+        )
+    };
+    filtered.total = filtered.detail.reduce((a, g) => a + g.count, 0);
+    filtered.groups = filtered.detail.length;
+    renderMappingDisplay(filtered);
+}
+
+function showAddMapping() {
+    document.getElementById('mapping-edit-form').style.display = 'block';
+    document.getElementById('edit-sku').value = '';
+    document.getElementById('edit-keywords').value = '';
+    document.getElementById('edit-sku').focus();
+}
+function hideEditForm() {
+    document.getElementById('mapping-edit-form').style.display = 'none';
+}
+function editSku(sku, keywords) {
+    document.getElementById('mapping-edit-form').style.display = 'block';
+    document.getElementById('edit-sku').value = sku;
+    document.getElementById('edit-keywords').value = keywords;
+}
+
+async function saveMapping() {
+    const sku = document.getElementById('edit-sku').value.trim();
+    const kwStr = document.getElementById('edit-keywords').value.trim();
+    if (!sku || !kwStr) { App.alert('请填写SKU和关键词', 'warning'); return; }
+    const keywords = kwStr.split(/[,，\s]+/).filter(k => k);
+    try {
+        const data = await App.api('/api/sku-mapping/edit', {
+            method: 'POST', body: { action: 'add', sku, keywords }
+        });
+        App.alert(data.msg, 'success');
+        hideEditForm();
+        loadMapping();
+    } catch(e) {
+        App.alert('保存失败: ' + e.message, 'danger');
+    }
+}
+
+async function deleteSku(sku) {
+    if (!confirm(`确认删除 SKU "${sku}" 的映射？`)) return;
+    try {
+        const data = await App.api('/api/sku-mapping/edit', {
+            method: 'POST', body: { action: 'delete', sku }
+        });
+        App.alert(data.msg, 'success');
+        loadMapping();
+    } catch(e) {
+        App.alert('删除失败: ' + e.message, 'danger');
+    }
+}
+
+async function refreshMapping() {
+    App.showLoading('正在刷新SKU映射...');
+    try {
+        const data = await App.api('/api/refresh-sku-mapping', { method: 'POST', body: {} });
+        App.alert(data.msg, 'success');
+        loadMapping();
+    } catch(e) {
+        App.alert('刷新失败: ' + e.message, 'danger');
+    } finally { App.hideLoading(); }
+}
+
+// 文件变更监控
+async function checkFileChanges() {
+    const el = document.getElementById('file-changes-list');
+    el.innerHTML = '<div class="text-center py-2"><div class="spinner-border spinner-border-sm"></div> 正在扫描Z盘文件...</div>';
+    try {
+        const data = await App.api('/api/file-changes');
+        const changes = data.changes || [];
+        if (changes.length === 0) {
+            el.innerHTML = '<div class="text-center py-2 text-success small"><i class="bi bi-check-circle me-1"></i>没有检测到文件变更</div>';
+        } else {
+            el.innerHTML = changes.map(c => `<div class="d-flex align-items-center gap-2 py-1 border-bottom" style="font-size:0.78rem;">
+                <i class="bi bi-pencil-square text-warning"></i>
+                <div class="flex-fill">
+                    <div class="fw-bold">${c.file}</div>
+                    <small class="text-muted">${c.old_time} → ${c.new_time}${c.user ? ' | ' + c.user : ''} | ${c.size_kb}KB</small>
+                </div>
+            </div>`).join('');
+        }
+        document.getElementById('file-changes-summary').textContent =
+            `共 ${data.total_files} 个文件 | ${changes.length} 个变更 | ${data.scanned_at}`;
+    } catch(e) {
+        el.innerHTML = `<div class="text-danger small py-2">${e.message}</div>`;
+    }
+}
+</script>
+{% endblock %}

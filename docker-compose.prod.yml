@@ -1,0 +1,101 @@
+# ============================================================
+# 排期录入系统 - 生产环境 Docker Compose
+# 用法: docker compose -f docker-compose.prod.yml up -d
+# ============================================================
+
+services:
+  # ---------- 反向代理 ----------
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: schedule-nginx
+    restart: always
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ssl-certs:/etc/nginx/ssl:ro
+      - static-files:/usr/share/nginx/static:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ---------- 应用主服务 ----------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-}schedule-system:${IMAGE_TAG:-latest}
+    container_name: schedule-app
+    restart: always
+    environment:
+      - CONTAINER_MODE=1
+      - Z_DRIVE_PATH=/mnt/schedules
+      - APP_PORT=5000
+      # 邮件配置
+      - IMAP_SERVER=${IMAP_SERVER:-}
+      - IMAP_PORT=${IMAP_PORT:-993}
+      - EMAIL_ACCOUNT=${EMAIL_ACCOUNT:-}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
+      # 应用配置
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
+      - GUNICORN_THREADS=${GUNICORN_THREADS:-4}
+      - TZ=Asia/Shanghai
+      # 若系统被部署在子路径下（如 /schedule/），取消注释并修改：
+      # - APP_PREFIX=/schedule
+    volumes:
+      # 持久化数据（named volumes）
+      - app-data:/app/data
+      - app-uploads:/app/uploads
+      # 排期文件（SMB/CIFS 网络共享盘挂载）
+      - schedules:/mnt/schedules
+      # 静态文件共享给 nginx
+      - static-files:/app/static:ro
+    expose:
+      - "5000"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  # 应用数据（JSON 配置、日志、SKU映射）
+  app-data:
+    driver: local
+  # 上传的 PDF 文件
+  app-uploads:
+    driver: local
+  # 排期 Excel 文件（从网络共享盘挂载）
+  # 生产环境需要改为 CIFS 驱动或 bind mount 到已挂载的 SMB 路径
+  schedules:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "${SMB_SHARE:-//192.168.1.1/各客排期/ZURU生产排期}"
+      o: "username=${SMB_USER:-},password=${SMB_PASSWORD:-},uid=1000,gid=1000,iocharset=utf8,vers=3.0"
+  # SSL 证书
+  ssl-certs:
+    driver: local
+  # 静态文件（nginx 和 app 共享）
+  static-files:
+    driver: local
+  # 备份
+  backups:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

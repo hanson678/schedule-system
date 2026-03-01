@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}排期录入{% endblock %} - ZURU排期系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-nav">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <span class="brand-logo">Z</span>
+                <span>
+                    ZURU 排期智能录入
+                    <span class="brand-sub">华登玩具集团 Hanson Toy Group</span>
+                </span>
+            </a>
+            <div class="d-flex align-items-center gap-2">
+                <a class="nav-link-custom {% if request.path == url_for('index') %}active{% endif %}" href="{{ url_for('index') }}">
+                    <i class="bi bi-house-door me-1"></i>首页
+                </a>
+                <a class="nav-link-custom {% if request.path == url_for('history_page') %}active{% endif %}" href="{{ url_for('history_page') }}">
+                    <i class="bi bi-clock-history me-1"></i>历史
+                </a>
+                <a class="nav-link-custom {% if request.path == url_for('statistics_page') %}active{% endif %}" href="{{ url_for('statistics_page') }}">
+                    <i class="bi bi-bar-chart-line me-1"></i>统计
+                </a>
+                <a class="nav-link-custom {% if request.path == url_for('settings') %}active{% endif %}" href="{{ url_for('settings') }}">
+                    <i class="bi bi-gear me-1"></i>设置
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container-fluid py-3">
+        <div id="global-alert" class="alert alert-dismissible fade" role="alert" style="display:none;">
+            <span id="global-alert-text"></span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer-bar">
+        <span>华登玩具集团 Royal Regent Products &copy; 2026 | 广东东莞清溪镇</span>
+        <span id="clock"></span>
+    </footer>
+
+    <div id="loading-overlay" style="display:none;">
+        <div class="loading-spinner"></div>
+        <p class="mt-3 fw-bold text-primary" id="loading-text">处理中...</p>
+        <small class="text-muted">通过WPS COM写入，不影响其他行格式</small>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>window.BASE_URL = "{{ request.script_root or '' }}";</script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
