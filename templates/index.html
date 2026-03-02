@@ -726,13 +726,22 @@ function renderOrders() {
                 if (a.type === 'new' && a.line) {
                     const ln = a.line;
                     const s = a.schedule;
+                    let mixedHtml = '';
+                    if (ln.is_mixed_carton && ln.mixed_components && ln.mixed_components.length) {
+                        const parts = ln.mixed_components.map(c => `${c.sku}×${c.qty}`).join(' + ');
+                        mixedHtml = `<div class="mixed-carton-tip">
+                            <i class="bi bi-boxes me-1"></i><b>混装箱</b>：${parts} = <b>${(ln.qty||0).toLocaleString()}pcs</b>
+                            <span class="text-muted ms-1">（PDF原始箱数: ${ln.mixed_qty_original || 0}）</span>
+                            <span class="badge bg-warning text-dark ms-2" style="font-size:0.65rem;">请确认数量正确</span>
+                        </div>`;
+                    }
                     preview = `<div class="preview-row">
                         <span class="pv-tag">SKU</span>${ln.sku || ln.sku_spec || '-'}
                         <span class="pv-tag">数量</span>${(ln.qty||0).toLocaleString()}
                         ${ln.price ? `<span class="pv-tag">单价</span>$${ln.price}` : ''}
                         ${ln.customer_po ? `<span class="pv-tag">客PO</span>${ln.customer_po}` : ''}
                         ${s ? `<span class="pv-dest">${s.sheet} 行${s.ref}</span>` : ''}
-                    </div>`;
+                    </div>${mixedHtml}`;
                 } else if (a.type === 'modify' && a.changes) {
                     const parts = Object.entries(a.changes).map(([col, val]) => {
                         const old = a.record?.data?.[col] || '?';

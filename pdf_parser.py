@@ -37,6 +37,7 @@ class PDFParser:
 
         header = self._header(full_text)
         lines = self._lines(all_tables, full_text)
+        lines = self._resolve_mixed_cartons(lines, full_text)  # 混装箱处理
         reqs = self._requirements(full_text)
         is_cancel = self._detect_cancel(full_text)
         return {**header, 'lines': lines, **reqs,
@@ -135,6 +136,74 @@ class PDFParser:
                      s, maxsplit=1, flags=re.I)[0].strip()
         # 去掉尾部逗号和多余空格
         return s.rstrip(' ,')
+
+    # =================== 混装箱处理 ===================
+
+    @staticmethod
+    def _is_std_product(line):
+        """判断是否是STD PRODUCT子行（混装箱散件）"""
+        spec = (line.get('sku_spec') or '').upper().replace('\n', ' ')
+        name = (line.get('name') or '').upper()
+        if 'STD' in spec:
+            return True
+        if ('STD PRODUCT' in name or 'BULK' in name) and \
+                line.get('price', 1) == 0 and line.get('total_usd', 1) == 0:
+            return True
+        return False
+
+    @staticmethod
+    def _extract_std_product_qtys(full_text):
+        """从PDF文本提取STD PRODUCT子行的数量。
+        返回: {line_no_str: [{'sku': sku, 'qty': qty}, ...]}
+        典型格式：10 7149 7149-STD[\\n]PRODUCT ... 0.0000 360.000 0.00 0 0.000
+        """
+        result = {}
+        pattern = re.compile(
+            r'(?:^|\n)[ \t]*(\d{2,3})[ \t]+'      # 行号 (group 1)
+            r'(\d{4,}[A-Za-z]?)[ \t]+'              # SKU  (group 2)
+            r'\d{4,}[A-Za-z]?-STD'                  # spec 开头含 -STD
+            r'[\s\S]{0,500}?'                        # 中间内容（非贪婪）
+            r'0\.\d{3,4}[ \t]+'                     # CBM = 0.xxxx
+            r'(\d{1,6})(?:\.\d+)?[ \t]+'            # qty  (group 3)
+            r'0\.00[ \t]+'                           # Total USD = 0.00
+            r'0[ \t]+'                               # Total CTNS = 0
+            r'0\.\d',                                # Total CBM = 0.x
+            re.MULTILINE
+        )
+        for m in pattern.finditer(full_text):
+            line_no = m.group(1)
+            sku = m.group(2)
+            try:
+                qty = int(float(m.group(3)))
+                if qty > 0:
+                    result.setdefault(line_no, []).append({'sku': sku, 'qty': qty})
+            except Exception:
+                pass
+        return result
+
+    def _resolve_mixed_cartons(self, lines, full_text):
+        """处理混装箱：
+        1. 从文本提取STD PRODUCT子行数量
+        2. 将父行QTY替换为子行数量之和
+        3. 从lines中移除STD PRODUCT子行
+        4. 父行标记 is_mixed_carton=True 及 mixed_components
+        """
+        std_by_lineno = self._extract_std_product_qtys(full_text)
+        result = []
+        for line in lines:
+            if self._is_std_product(line):
+                continue
+            line_no = str(line.get('line_no', '')).strip()
+            if line_no in std_by_lineno:
+                components = std_by_lineno[line_no]
+                total_qty = sum(c['qty'] for c in components)
+                if total_qty > 0:
+                    line['is_mixed_carton'] = True
+                    line['mixed_components'] = components
+                    line['mixed_qty_original'] = line.get('qty', 0)
+                    line['qty'] = total_qty
+            result.append(line)
+        return result
 
     def _lines(self, tables, full_text):
         lines = []
