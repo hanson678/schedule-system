@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """PO PDF完整解析 v4 - 不漏行 + 取消单检测 + 异常分类"""
-import os, re
+import os, re, logging
 import pdfplumber
 
 
@@ -27,25 +27,35 @@ def _normalize_date(s):
 class PDFParser:
     def parse(self, pdf_path):
         with pdfplumber.open(pdf_path) as pdf:
-            full_text = ''
+            text_parts = []
             all_tables = []
             for page in pdf.pages:
-                full_text += (page.extract_text() or '') + '\n'
+                text_parts.append(page.extract_text() or '')
                 tbls = page.extract_tables()
                 if tbls:
                     all_tables.extend(tbls)
+            full_text = '\n'.join(text_parts)
 
         header = self._header(full_text)
         lines = self._lines(all_tables, full_text)
+        lines = self._merge_cross_page_lines(lines)  # 跨页断裂行合并
+        lines = self._resolve_pallet_groups(lines)  # 卡板货号合并（SLB/SLD/SLT/SK），必须在混装处理前
         lines = self._resolve_mixed_cartons(lines, full_text)  # 混装箱处理
+        mixed_groups = getattr(self, '_mixed_groups_info', [])
+        # 填充PO号到mixed_groups
+        po = header.get('po_number', '')
+        for mg in mixed_groups:
+            mg['po_number'] = po
         reqs = self._requirements(full_text)
         is_cancel = self._detect_cancel(full_text)
         return {**header, 'lines': lines, **reqs,
-                'is_cancel': is_cancel, 'raw_text': full_text[:8000]}
+                'is_cancel': is_cancel, 'raw_text': full_text[:8000],
+                'mixed_groups': mixed_groups}
 
     def _detect_cancel(self, text):
-        """检测取消单：PDF中有取消水印/印章（排除备注中的'取消'）"""
-        clean = re.sub(r'(?:Remark|Packaging\s+Info|备注)[：:\s].*', '', text,
+        """检测取消单：PDF中有取消水印/印章（排除备注/修订记录中的'取消'）"""
+        # 排除备注、包装信息、修订记录段落（修改单的修订历史常含CANCELLED字样）
+        clean = re.sub(r'(?:Remark|Packaging\s+Info|备注|Order\s+Modif|Modifiable\s+Records?|Revision|Change\s+Log)[：:\s].*', '', text,
                        flags=re.DOTALL | re.I)
         if '取消' in clean or '取 消' in clean:
             return True
@@ -132,6 +142,13 @@ class PDFParser:
                      r'New\s+Zealand|Singapore|Thailand|Vietnam|Hong\s+Kong|Taiwan|'
                      r'Malaysia|Indonesia|India|Brazil|Canada|Mexico|Italy|Spain|'
                      r'Netherlands|UK|US|USA|EU|Russia|Russian|Turkey|South\s+Africa|'
+                     r'Guatemala|Uruguay|Costa\s+Rica|Panama|Dominican|Puerto\s+Rico|'
+                     r'Ecuador|Venezuela|Paraguay|Bolivia|Honduras|El\s+Salvador|'
+                     r'Nicaragua|Jamaica|Colombia|Peru|Argentina|Chile|'
+                     r'Sweden|Norway|Denmark|Finland|Belgium|Austria|Switzerland|'
+                     r'Portugal|Greece|Ireland|Israel|Egypt|Morocco|Kenya|Nigeria|'
+                     r'Czech|Poland|Romania|Hungary|Croatia|Slovenia|Slovakia|'
+                     r'Bulgaria|Serbia|Estonia|Latvia|Lithuania|Iceland|Luxembourg|'
                      r'Destination|Sales\s+Order|Loading\s+Port)',
                      s, maxsplit=1, flags=re.I)[0].strip()
         # 去掉尾部逗号和多余空格
@@ -141,14 +158,20 @@ class PDFParser:
 
     @staticmethod
     def _is_std_product(line):
-        """判断是否是STD PRODUCT子行（混装箱散件）"""
+        """判断是否是STD PRODUCT / DUMMY子行（混装箱散件）
+        识别模式：含STD或DUMMY的SPEC、或price=0且SPEC含PRODUCT/PRODCC等变体"""
         spec = (line.get('sku_spec') or '').upper().replace('\n', ' ')
         name = (line.get('name') or '').upper()
         if 'STD' in spec:
             return True
-        if ('STD PRODUCT' in name or 'BULK' in name) and \
-                line.get('price', 1) == 0 and line.get('total_usd', 1) == 0:
+        # price=0 + SPEC含PRODUCT/PRODCC等变体（如77772-PRODCC1-PRODUCT）
+        if 'DUMMY' in spec:
             return True
+        if line.get('price', 1) == 0 and line.get('total_usd', 1) == 0:
+            if 'PRODUCT' in spec or 'PRODCC' in spec:
+                return True
+            if 'STD PRODUCT' in name or 'BULK' in name:
+                return True
         return False
 
     @staticmethod
@@ -164,7 +187,7 @@ class PDFParser:
             r'\d{4,}[A-Za-z]?-STD'                  # spec 开头含 -STD
             r'[\s\S]{0,500}?'                        # 中间内容（非贪婪）
             r'0\.\d{3,4}[ \t]+'                     # CBM = 0.xxxx
-            r'(\d{1,6})(?:\.\d+)?[ \t]+'            # qty  (group 3)
+            r'([\d,]{1,10})(?:\.\d+)?[ \t]+'          # qty  (group 3) 支持千分位逗号
             r'0\.00[ \t]+'                           # Total USD = 0.00
             r'0[ \t]+'                               # Total CTNS = 0
             r'0\.\d',                                # Total CBM = 0.x
@@ -174,7 +197,7 @@ class PDFParser:
             line_no = m.group(1)
             sku = m.group(2)
             try:
-                qty = int(float(m.group(3)))
+                qty = int(float(m.group(3).replace(',', '')))
                 if qty > 0:
                     result.setdefault(line_no, []).append({'sku': sku, 'qty': qty})
             except Exception:
@@ -182,27 +205,271 @@ class PDFParser:
         return result
 
     def _resolve_mixed_cartons(self, lines, full_text):
-        """处理混装箱：
-        1. 从文本提取STD PRODUCT子行数量
-        2. 将父行QTY替换为子行数量之和
-        3. 从lines中移除STD PRODUCT子行
-        4. 父行标记 is_mixed_carton=True 及 mixed_components
+        """处理混装箱和同line多行:
+        1. MEC类（字母前缀+有价格+STD组件）→ 拆分为各组件独立行
+        2. 通用同line多行（同line_no有price=0子行）→ 子行继承父行字段，各自独立
+        所有混装组标记needs_user_confirmation，由前端弹窗确认
         """
-        std_by_lineno = self._extract_std_product_qtys(full_text)
-        result = []
+        # Step 1: 从已解析行提取STD子行数量（table解析已含正确qty）
+        std_by_lineno = {}
+        zero_qty_stds = []  # qty=0的STD行，需文本兜底
         for line in lines:
             if self._is_std_product(line):
+                ln = str(line.get('line_no', '')).strip()
+                sk = line.get('sku', '') or line.get('item_code', '')
+                qt = line.get('qty', 0)
+                if ln and sk and qt > 0:
+                    std_by_lineno.setdefault(ln, []).append({'sku': sk, 'qty': qt})
+                elif ln and sk and qt == 0:
+                    zero_qty_stds.append((ln, sk))
+
+        # Step 1.5: 对table中qty=0的STD行，从文本中补查qty
+        for zln, zsk in zero_qty_stds:
+            existing = {c['sku'] for c in std_by_lineno.get(zln, [])}
+            if zsk in existing:
                 continue
+            pat = re.compile(
+                r'(?:^|\n)\s*' + re.escape(zln) + r'\s+' + re.escape(zsk) +
+                r'\s.*?0\.0{3,4}\s+([\d,]+)(?:\.\d+)?\s+0\.00\s+0\s+0\.\d',
+                re.DOTALL
+            )
+            m = pat.search(full_text)
+            if m:
+                try:
+                    qt = int(float(m.group(1).replace(',', '')))
+                    if qt > 0:
+                        std_by_lineno.setdefault(zln, []).append({'sku': zsk, 'qty': qt})
+                except:
+                    pass
+
+        # Step 2: 正则提取作为补充（防止table解析漏掉）
+        regex_std = self._extract_std_product_qtys(full_text)
+        for ln, comps in regex_std.items():
+            existing_skus = {c['sku'] for c in std_by_lineno.get(ln, [])}
+            for c in comps:
+                if c['sku'] not in existing_skus:
+                    std_by_lineno.setdefault(ln, []).append(c)
+
+        # Step 2.5: 检测同line_no的非STD price=0子行（通用同line多行）
+        from collections import defaultdict
+        non_std_by_lineno = defaultdict(list)
+        for i, line in enumerate(lines):
+            if self._is_std_product(line):
+                continue
+            ln = str(line.get('line_no', '')).strip()
+            if ln:
+                non_std_by_lineno[ln].append((i, line))
+
+        general_mixed = {}   # line_no → {'parent_idx': int, 'children': [(idx, line)]}
+        general_skip = set()  # 子行原始索引，主循环中跳过
+        for ln, entries in non_std_by_lineno.items():
+            if len(entries) <= 1:
+                continue
+            parents = [(i, l) for i, l in entries if (l.get('price', 0) or 0) > 0]
+            children = [(i, l) for i, l in entries if (l.get('price', 0) or 0) == 0]
+            if not parents or not children:
+                continue
+            # 排除MEC父行（字母前缀在MEC分支中处理）
+            parent_sku = parents[0][1].get('sku', '')
+            parent_base = parent_sku.split('-')[0]
+            if re.match(r'[A-Za-z]', parent_base):
+                continue
+            general_mixed[ln] = {'parent_idx': parents[0][0], 'children': children}
+            for ci, cl in children:
+                general_skip.add(ci)
+
+        # Step 3: 构建结果
+        result = []
+        mixed_groups_info = []
+
+        for i, line in enumerate(lines):
+            if i in general_skip:
+                continue
+            if self._is_std_product(line):
+                continue
+
             line_no = str(line.get('line_no', '')).strip()
-            if line_no in std_by_lineno:
+            sku = line.get('sku', '') or ''
+            sku_spec = line.get('sku_spec', '') or ''
+            price = line.get('price', 0) or 0
+            base = sku.split('-')[0]
+            has_letter_prefix = bool(re.match(r'[A-Za-z]', base))
+
+            if has_letter_prefix and price > 0 and line_no in std_by_lineno:
+                # === MEC父行（有价格+有STD组件）→ 拆分为各组件独立行 ===
                 components = std_by_lineno[line_no]
-                total_qty = sum(c['qty'] for c in components)
-                if total_qty > 0:
+                carton_count = line.get('qty', 0)
+                # 从sku_spec提取base之后的全部后缀（含年份+S编号）
+                # 例: MB212-2025-S001 → after_base="-2025-S001"
+                #     MEC123-S001     → after_base="-S001"
+                if sku_spec.upper().startswith(base.upper() + '-'):
+                    after_base = sku_spec[len(base):]
+                else:
+                    after_base = ''
+                    spec_parts = sku_spec.split('-')
+                    for p in spec_parts[1:]:
+                        if re.match(r'S\d+', p, re.I):
+                            after_base = f'-{p}'
+                            break
+
+                group_comps = []
+                for comp in components:
+                    new_line = dict(line)
+                    comp_sku = f"{base}-{comp['sku']}{after_base}"
+                    new_line['sku'] = comp_sku
+                    new_line['sku_spec'] = comp_sku
+                    new_line['item_code'] = comp['sku']
+                    new_line['qty'] = comp['qty']
+                    new_line['carton_count'] = carton_count
+                    new_line['is_mixed_carton'] = True
+                    new_line['mixed_parent_sku'] = sku
+                    new_line['mixed_components'] = components
+                    new_line['mixed_qty_original'] = carton_count
+                    new_line['needs_user_confirmation'] = True
+                    result.append(new_line)
+                    group_comps.append({'sku': comp_sku, 'qty': comp['qty']})
+
+                mixed_groups_info.append({
+                    'line_no': line_no,
+                    'parent_sku': sku_spec,
+                    'type': 'mec_split',
+                    'components': group_comps,
+                    'customer_po': line.get('customer_po', ''),
+                })
+
+            elif has_letter_prefix and price > 0 and line_no not in std_by_lineno:
+                line['mec_split_failed'] = True
+                line['mec_fail_reason'] = f'{sku}未找到组件子行，需手动入单'
+                result.append(line)
+
+            elif has_letter_prefix and price == 0:
+                continue
+
+            else:
+                # === 通用处理 ===
+                has_std = line_no in std_by_lineno
+                has_general = line_no in general_mixed
+
+                if has_std or has_general:
+                    # 同line多行：父行保留 + 子行各自独立（继承父行字段）
                     line['is_mixed_carton'] = True
-                    line['mixed_components'] = components
-                    line['mixed_qty_original'] = line.get('qty', 0)
-                    line['qty'] = total_qty
-            result.append(line)
+                    line['needs_user_confirmation'] = True
+                    result.append(line)
+
+                    group_comps = []
+
+                    # STD组件 → 各自独立行（继承父行的price/delivery/inner_pcs等）
+                    if has_std:
+                        for comp in std_by_lineno[line_no]:
+                            new_line = dict(line)
+                            comp_sku = comp['sku']
+                            comp_sku = re.sub(r'-?STD\s*PRODUCT$', '', comp_sku, flags=re.I).strip()
+                            comp_sku = re.sub(r'-?STDPRODUCT$', '', comp_sku, flags=re.I).strip()
+                            new_line['sku'] = comp_sku
+                            new_line['sku_spec'] = comp_sku
+                            new_line['item_code'] = comp_sku.split('-')[0] if '-' in comp_sku else comp_sku
+                            new_line['qty'] = comp['qty']
+                            new_line['is_mixed_carton'] = True
+                            new_line['needs_user_confirmation'] = True
+                            new_line['mixed_parent_sku'] = sku_spec
+                            result.append(new_line)
+                            group_comps.append({'sku': comp_sku, 'qty': comp['qty']})
+
+                    # 非STD的price=0子行 → 各自独立行（继承父行的price/delivery等）
+                    if has_general:
+                        for ci, child in general_mixed[line_no]['children']:
+                            new_line = dict(line)
+                            child_sku = child.get('sku_spec') or child.get('sku', '')
+                            child_sku = re.sub(r'-?STD\s*PRODUCT$', '', child_sku, flags=re.I).strip()
+                            child_sku = re.sub(r'-?STDPRODUCT$', '', child_sku, flags=re.I).strip()
+                            new_line['sku'] = child_sku
+                            new_line['sku_spec'] = child_sku
+                            new_line['item_code'] = child_sku.split('-')[0] if '-' in child_sku else child_sku
+                            new_line['qty'] = child.get('qty', 0)
+                            if child.get('name'):
+                                new_line['name'] = child['name']
+                            if child.get('barcode'):
+                                new_line['barcode'] = child['barcode']
+                            new_line['is_mixed_carton'] = True
+                            new_line['needs_user_confirmation'] = True
+                            new_line['mixed_parent_sku'] = sku_spec
+                            result.append(new_line)
+                            group_comps.append({'sku': child_sku, 'qty': child.get('qty', 0)})
+
+                    if group_comps:
+                        mixed_groups_info.append({
+                            'line_no': line_no,
+                            'parent_sku': sku_spec,
+                            'type': 'same_line_split',
+                            'components': group_comps,
+                            'customer_po': line.get('customer_po', ''),
+                        })
+                else:
+                    result.append(line)
+
+        self._mixed_groups_info = mixed_groups_info
+        return result
+
+    # 卡板货号（SLB/SLD/SLT/SK/MTQ）识别正则
+    _PALLET_MAIN_RE = re.compile(r'^(?:\d+(?:SLB|SLD|SLT|SK)\d*|MTQ\d+)(?:-(?!P\d)|$)', re.I)
+    _PALLET_PART_RE = re.compile(r'^(?:\d+(?:SLB|SLD|SLT|SK)\d*|MTQ\d+)-P\d', re.I)
+
+    def _resolve_pallet_groups(self, lines):
+        """卡板货号合并：同Line下 MAIN + Px零件 + PRODUCT 合并为一条
+        规则：
+        - MAIN行（如15752SLB-S002）：提供货号(sku_spec)和单价(price)
+        - Px行（如15752SLB-P2）：零件，丢弃不入排期
+        - PRODUCT行（如15752-STD PRODUCT）：提供产品件数
+        - PO数量 = 同Line所有子行中QTY最大的（即产品件数）
+        - 单价 = MAIN行Price（每卡板价格）
+        """
+        import logging
+        if not lines:
+            return lines
+
+        # 按line_no分组
+        from collections import OrderedDict
+        groups = OrderedDict()
+        for ln in lines:
+            lno = str(ln.get('line_no', '')).strip()
+            groups.setdefault(lno, []).append(ln)
+
+        result = []
+        for lno, group in groups.items():
+            if len(group) == 1:
+                result.append(group[0])
+                continue
+
+            # 找MAIN行（SKU含SLB/SLD/SLT/SK且非零件）
+            main = None
+            for ln in group:
+                sku = ln.get('sku_spec', '') or ln.get('sku', '') or ''
+                if self._PALLET_MAIN_RE.match(sku) and not self._PALLET_PART_RE.match(sku):
+                    main = ln
+                    break
+
+            if not main:
+                # 非卡板组，保留所有行
+                result.extend(group)
+                continue
+
+            # 取所有子行中最大的QTY作为产品件数
+            max_qty = 0
+            for ln in group:
+                q = ln.get('qty', 0) or 0
+                if q > max_qty:
+                    max_qty = q
+
+            # 合并：用MAIN行数据，替换QTY为产品件数
+            merged = dict(main)
+            merged['qty'] = max_qty
+            # 标记为卡板货号（供后续金额公式处理）
+            merged['is_pallet'] = True
+            merged['pallet_count'] = main.get('qty', 0)  # 原始卡板数
+            logging.info(f"[卡板合并] Line {lno}: {main.get('sku_spec','')} "
+                         f"卡板数={main.get('qty',0)} 产品件数={max_qty} 单价={main.get('price',0)}")
+            result.append(merged)
+
         return result
 
     def _lines(self, tables, full_text):
@@ -214,14 +481,16 @@ class PDFParser:
             if not table or len(table) < 1:
                 continue
 
-            # 跳过非商品表格（Special Requirements, Additional Clause等）
+            # 跳过非商品表格（Special Requirements, Additional Clause, Order Modifiable Records等）
             first_text = ' '.join([str(c) for c in table[0] if c]).lower() if table[0] else ''
             for r in table[:3]:
                 first_text += ' ' + (' '.join([str(c) for c in r if c]).lower() if r else '')
-            if any(kw in first_text for kw in ('special requirement', 'additional clause',
-                                                 'confirmed and accepted',
-                                                 'product requeriments',
-                                                 'product requirements')):
+            if (any(kw in first_text for kw in ('special requirement', 'additional clause',
+                                                  'confirmed and accepted',
+                                                  'product requeriments',
+                                                  'product requirements',
+                                                  'order modifiable', 'modifiable records'))
+                    or ('revision' in first_text and 'comment' in first_text)):
                 continue
 
             # 尝试找到表头
@@ -243,6 +512,8 @@ class PDFParser:
                         data_start += 1
                         pcs_cols = [j for j, c in enumerate(sub or [])
                                     if c and 'pcs' == str(c).strip().lower()]
+                        if len(pcs_cols) >= 1:
+                            cm['inner_pcs'] = pcs_cols[0]
                         if len(pcs_cols) >= 2:
                             cm['outer_pcs'] = pcs_cols[1]
                 last_cm = cm
@@ -285,11 +556,18 @@ class PDFParser:
                 # 安全检查：SKU不应超过30字符（超过的肯定不是真实SKU）
                 if line and line.get('sku') and len(line['sku']) > 30:
                     continue
+                # SKU必须含数字才是有效货号（过滤中文备注/日期被误取为SKU的情况）
+                if line and line.get('sku') and not re.search(r'\d', line['sku']):
+                    continue
                 if line and (line['qty'] > 0 or line['sku']):
-                    # 去重：同SKU同数量不重复添加
+                    # 去重：同SKU同数量不重复添加（但line_no不同的是不同行）
                     dup = False
                     for existing in lines:
                         if existing['sku'] == line['sku'] and existing['qty'] == line['qty']:
+                            # 如果两行都有line_no且不同，说明是不同订单行，不去重
+                            if (line.get('line_no') and existing.get('line_no')
+                                    and line['line_no'] != existing['line_no']):
+                                continue
                             dup = True; break
                     if not dup:
                         lines.append(line)
@@ -305,6 +583,56 @@ class PDFParser:
                 lines.append(tl)
 
         return lines
+
+    # ---------- 跨页断裂行合并 ----------
+    @staticmethod
+    def _has_valid_item(sku):
+        """检查SKU是否包含有效货号模式（4位以上连续数字，如92129H、15726A）"""
+        return bool(sku and re.search(r'\d{4,}', sku))
+
+    def _merge_cross_page_lines(self, lines):
+        """合并跨页断裂的行：数据行(有qty无有效货号) + 头部行(有货号无qty)
+        PDF跨页时同一Line可能被拆成两段：
+        - 页末：有数量/价格/日期/barcode，但货号缺失或不完整
+        - 页首：有货号/产品名，但数量=0
+        """
+        if len(lines) < 2:
+            return lines
+
+        result = []
+        skip = set()
+
+        for i in range(len(lines)):
+            if i in skip:
+                continue
+            cur = lines[i]
+            nxt = lines[i + 1] if i + 1 < len(lines) and i + 1 not in skip else None
+
+            if nxt:
+                cur_has_item = self._has_valid_item(cur.get('sku', ''))
+                nxt_has_item = self._has_valid_item(nxt.get('sku', ''))
+
+                # 检测跨页断裂：一行有qty无货号 + 另一行有货号无qty
+                if (cur['qty'] > 0) != (nxt['qty'] > 0) and cur_has_item != nxt_has_item:
+                    data_line = cur if cur['qty'] > 0 else nxt
+                    item_line = nxt if cur['qty'] > 0 else cur
+                    merged = dict(data_line)
+                    # 从货号行取标识字段
+                    merged['sku'] = item_line['sku']
+                    merged['sku_spec'] = item_line.get('sku_spec') or data_line.get('sku_spec', '')
+                    merged['name'] = item_line.get('name') or data_line.get('name', '')
+                    merged['item_code'] = item_line.get('item_code') or data_line.get('item_code', '')
+                    merged['customer_po'] = item_line.get('customer_po') or data_line.get('customer_po', '')
+                    if item_line.get('line_no'):
+                        merged['line_no'] = item_line['line_no']
+                    logging.info('[跨页合并] %s qty=%s', merged['sku'], merged['qty'])
+                    result.append(merged)
+                    skip.add(i + 1)
+                    continue
+
+            result.append(cur)
+
+        return result
 
     def _auto_col_map_from_data(self, table):
         """从数据行自动检测列映射（用于续表/无表头的表格）
@@ -527,6 +855,20 @@ class PDFParser:
                                 cpo = val; break
         line['customer_po'] = cpo
 
+        # 内箱数
+        inner = 0
+        ip = g('inner_pcs')
+        im = re.search(r'(\d+)', ip)
+        if im:
+            inner = int(im.group(1))
+        if inner == 0 and line['name']:
+            # 从名称提取：如"8PCS/PDQ" → inner=8
+            inm = re.search(r'(\d+)\s*PCS/PDQ', line['name'], re.I)
+            if inm:
+                inner = int(inm.group(1))
+        line['inner_pcs'] = inner
+
+        # 外箱数
         outer = 0
         op = g('outer_pcs')
         om = re.search(r'(\d+)', op)
@@ -582,12 +924,12 @@ class PDFParser:
         if m:
             tracking = f'日期码格式：{m.group(1).strip()} 日期：{m.group(2).strip()}'
 
-        def ext(p, lim=2000):
+        def ext(p):
             m = re.search(p, t, re.DOTALL | re.I)
-            return m.group(1).strip()[:lim] if m else ''
+            return m.group(1).strip() if m else ''
 
         packaging = ext(r'Packaging\s+Info[：:\s]*(.*?)(?=Remark[：:\s]|$)')
-        remark = ext(r'Remark[：:\s]*(.*?)(?=Order Modifiable|$)', 3000)
+        remark = ext(r'Remark[：:\s]*(.*?)(?=Order Modifiable|$)')
 
         # 修订记录（Order Modifiable Records）
         revision = ''
@@ -608,64 +950,81 @@ class PDFParser:
         return {'tracking_code': tracking, 'packaging_info': packaging,
                 'remark': remark, 'revision': revision}
 
+    # 优先使用的短名/别名覆盖表（pycountry返回的正式名太长，或无法识别的缩写）
+    _COUNTRY_OVERRIDES = {
+        'usa': '美国', 'u.s.a': '美国', 'u.s.a.': '美国',
+        'uk': '英国', 'great britain': '英国',
+        'uae': '阿联酋', 'united arab emirates': '阿联酋',
+        'utd.arab emir': '阿联酋', 'utdarab emir': '阿联酋',
+        'russia': '俄罗斯', 'russian fed': '俄罗斯', 'russian fed.': '俄罗斯',
+        'russian federation': '俄罗斯',
+        'korea': '韩国', 'south korea': '韩国',
+        'czech republic': '捷克', 'czechia': '捷克',
+        'hong kong': '香港', 'taiwan': '台湾',
+        'holland': '荷兰', 'deutschland': '德国',
+        'saudi arabia': '沙特',
+        'ivory coast': '科特迪瓦', "cote d'ivoire": '科特迪瓦',
+        'viet nam': '越南',
+        'slovak republic': '斯洛伐克',
+        # babel返回的正式名→惯用简称
+        '阿拉伯联合酋长国': '阿联酋', '俄罗斯联邦': '俄罗斯',
+        '大韩民国': '韩国', '朝鲜': '朝鲜',
+    }
+    # pycountry+babel 翻译缓存（类级别，进程内只初始化一次）
+    _babel_locale = None
+    _country_cache = {}
+
     def _country(self, c):
         if not c: return ''
-        m = {'usa': '美国', 'us': '美国', 'united states': '美国', 'u.s.a': '美国',
-             'france': '法国', 'fr': '法国',
-             'germany': '德国', 'de': '德国', 'deutschland': '德国',
-             'uk': '英国', 'gb': '英国', 'united kingdom': '英国', 'great britain': '英国',
-             'australia': '澳大利亚', 'au': '澳大利亚',
-             'canada': '加拿大', 'ca': '加拿大',
-             'japan': '日本', 'jp': '日本',
-             'netherlands': '荷兰', 'nl': '荷兰', 'holland': '荷兰',
-             'spain': '西班牙', 'es': '西班牙',
-             'italy': '意大利', 'it': '意大利',
-             'slovakia': '斯洛伐克', 'slovakia,slovakia': '斯洛伐克', 'sk': '斯洛伐克',
-             'czech republic': '捷克', 'czechia': '捷克', 'cz': '捷克',
-             'poland': '波兰', 'pl': '波兰',
-             'new zealand': '新西兰', 'nz': '新西兰',
-             'south korea': '韩国', 'korea': '韩国', 'kr': '韩国',
-             'mexico': '墨西哥', 'mx': '墨西哥',
-             'brazil': '巴西', 'br': '巴西',
-             'india': '印度', 'in': '印度',
-             'south africa': '南非', 'za': '南非',
-             'china': '中国', 'cn': '中国', 'hong kong': '香港', 'hk': '香港',
-             'taiwan': '台湾', 'tw': '台湾',
-             'singapore': '新加坡', 'sg': '新加坡',
-             'malaysia': '马来西亚', 'my': '马来西亚',
-             'thailand': '泰国', 'th': '泰国',
-             'indonesia': '印度尼西亚', 'id': '印度尼西亚',
-             'philippines': '菲律宾', 'ph': '菲律宾',
-             'vietnam': '越南', 'vn': '越南',
-             'sweden': '瑞典', 'se': '瑞典',
-             'norway': '挪威', 'no': '挪威',
-             'denmark': '丹麦', 'dk': '丹麦',
-             'finland': '芬兰', 'fi': '芬兰',
-             'belgium': '比利时', 'be': '比利时',
-             'austria': '奥地利', 'at': '奥地利',
-             'switzerland': '瑞士', 'ch': '瑞士',
-             'portugal': '葡萄牙', 'pt': '葡萄牙',
-             'greece': '希腊', 'gr': '希腊',
-             'ireland': '爱尔兰', 'ie': '爱尔兰',
-             'turkey': '土耳其', 'tr': '土耳其',
-             'russia': '俄罗斯', 'ru': '俄罗斯', 'russian fed': '俄罗斯', 'russian federation': '俄罗斯',
-             'uae': '阿联酋', 'united arab emirates': '阿联酋',
-             'saudi arabia': '沙特', 'sa': '沙特',
-             'chile': '智利', 'cl': '智利',
-             'argentina': '阿根廷', 'ar': '阿根廷',
-             'colombia': '哥伦比亚', 'co': '哥伦比亚',
-             'peru': '秘鲁', 'pe': '秘鲁',
-             'romania': '罗马尼亚', 'ro': '罗马尼亚',
-             'hungary': '匈牙利', 'hu': '匈牙利',
-             'croatia': '克罗地亚', 'hr': '克罗地亚',
-             'slovenia': '斯洛文尼亚', 'si': '斯洛文尼亚',
-             'israel': '以色列', 'il': '以色列',
-             'egypt': '埃及', 'eg': '埃及',
-             }
-        cl = c.strip().lower().split(',')[0].strip().rstrip('.')
-        result = m.get(cl, c.split(',')[0].strip())
-        _cn_simplify = {'俄罗斯联邦': '俄罗斯', '大韩民国': '韩国', '阿拉伯联合酋长国': '阿联酋'}
-        return _cn_simplify.get(result, result)
+        import re as _re
+        raw = _re.sub(r'[\n\r]+', ' ', str(c)).strip()
+        # 取逗号前段、去尾点、规范空格
+        lookup = raw.split(',')[0].strip().rstrip('.').strip()
+        cl = lookup.lower()
+
+        # 1. 覆盖表（优先级最高：处理缩写、别名、babel长名→短名）
+        if cl in self._COUNTRY_OVERRIDES:
+            return self._COUNTRY_OVERRIDES[cl]
+        # 去掉所有点再查一次（处理 U.S.A → usa）
+        cl_nodot = cl.replace('.', '').strip()
+        if cl_nodot in self._COUNTRY_OVERRIDES:
+            return self._COUNTRY_OVERRIDES[cl_nodot]
+
+        # 2. 缓存命中
+        if cl in self._country_cache:
+            return self._country_cache[cl]
+
+        # 3. pycountry + babel 全量翻译（195个国家全覆盖）
+        try:
+            import pycountry
+            if PDFParser._babel_locale is None:
+                from babel import Locale
+                PDFParser._babel_locale = Locale.parse('zh_Hans_CN')
+            locale = PDFParser._babel_locale
+
+            # 先尝试 ISO alpha-2 直查（两位代码如 US/GB/CN）
+            country = None
+            if len(cl_nodot) == 2:
+                country = pycountry.countries.get(alpha_2=cl_nodot.upper())
+            # 再模糊搜索（去点号后）
+            if not country:
+                results = pycountry.countries.search_fuzzy(cl_nodot)
+                country = results[0] if results else None
+
+            if country:
+                cn = locale.territories.get(country.alpha_2, '')
+                # 再过一遍覆盖表（处理 babel 返回正式长名）
+                cn = self._COUNTRY_OVERRIDES.get(cn, cn) or cn
+                if cn:
+                    PDFParser._country_cache[cl] = cn
+                    return cn
+        except Exception:
+            pass
+
+        # 4. 兜底：返回原始首段（至少不写英文全名进去）
+        result = lookup
+        PDFParser._country_cache[cl] = result
+        return result
 
     # =================== 异常分类与验证 ===================
 

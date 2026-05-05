@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZURU 总排期入单</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background: #f5f7fa; font-family: -apple-system, 'Microsoft YaHei', sans-serif; }
+        .main-card { max-width: 800px; margin: 40px auto; }
+        .drop-zone { border: 2px dashed #ccc; border-radius: 12px; padding: 50px 20px;
+                     text-align: center; cursor: pointer; transition: all 0.3s; background: #fff; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #198754; background: #f0fff4; }
+        .result-box { max-height: 400px; overflow-y: auto; }
+        .file-tag { display: inline-block; background: #e8f5e9; color: #2e7d32; border-radius: 4px;
+                    padding: 2px 8px; margin: 2px; font-size: 0.8rem; }
+        .browse-list { max-height: 400px; overflow-y: auto; }
+        .browse-item { cursor: pointer; padding: 6px 12px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; }
+        .browse-item:hover { background: #f0fff4; }
+        .browse-item.is-file:hover { background: #e8f5e9; }
+        .browse-item i { font-size: 1.1rem; flex-shrink: 0; }
+        .browse-current { font-size: 0.8rem; color: #666; word-break: break-all; background: #f8f9fa; padding: 6px 10px; border-radius: 4px; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+<div class="container main-card">
+    <div class="text-center mb-4">
+        <h3 class="fw-bold text-success"><i class="bi bi-table me-2"></i>ZURU 总排期入单</h3>
+        <div class="d-flex align-items-center justify-content-center gap-2 mt-1">
+            <input type="text" id="masterPath" class="form-control form-control-sm" style="max-width:450px;font-size:0.8rem;" readonly>
+            <button class="btn btn-outline-primary btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;" onclick="openFileBrowser()">选择总排期</button>
+            <button class="btn btn-outline-success btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;" onclick="document.getElementById('masterFileInput').click()"><i class="bi bi-upload"></i> 上传总排期</button>
+            <input type="file" id="masterFileInput" accept=".xlsx,.xls" style="display:none" onchange="uploadMasterFile(this)">
+            <button class="btn btn-outline-secondary btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;" onclick="resetPath()">恢复默认</button>
+            <button class="btn btn-outline-info btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;" onclick="checkStatus()"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
+            <span id="file-status" class="badge bg-secondary small">检查中...</span>
+        </div>
+    </div>
+
+    <!-- 拖拽上传区 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                <i class="bi bi-cloud-arrow-up" style="font-size:2.5rem;color:#198754;"></i>
+                <p class="mt-2 mb-0 fw-bold">拖放Excel PO文件到此处</p>
+                <p class="text-muted small">或点击选择文件（支持多个.xlsx）</p>
+            </div>
+            <input type="file" id="fileInput" multiple accept=".xlsx,.xls" style="display:none"
+                   onchange="showFiles(this.files)">
+
+            <!-- 已选文件列表 -->
+            <div id="fileList" class="mt-2" style="display:none;">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-bold small"><i class="bi bi-files me-1"></i>已选文件：<span id="fileCount">0</span>个</span>
+                    <button class="btn btn-outline-secondary btn-sm py-0" onclick="clearFiles()">清除</button>
+                </div>
+                <div id="fileTags" style="max-height:100px;overflow-y:auto;"></div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-success flex-fill" onclick="doUpload()" id="btnUpload">
+                    <i class="bi bi-plus-circle me-1"></i>写入总排期
+                </button>
+                <button class="btn btn-outline-success" onclick="doDownload()">
+                    <i class="bi bi-download me-1"></i>下载总排期
+                </button>
+                <button class="btn btn-outline-warning" onclick="doYellowSummary()" id="btnSummary">
+                    <i class="bi bi-bar-chart me-1"></i>有填充行汇总
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 处理结果 -->
+    <div class="card" id="resultCard" style="display:none;">
+        <div class="card-body result-box">
+            <div id="resultContent"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+let selectedFiles = [];
+
+function _escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+// 拖拽
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const files = [...e.dataTransfer.files].filter(f => f.name.match(/\.xlsx?$/i));
+    if (files.length) { selectedFiles = files; showFiles(files); }
+});
+
+function showFiles(files) {
+    if (files instanceof FileList) selectedFiles = [...files];
+    document.getElementById('fileList').style.display = '';
+    document.getElementById('fileCount').textContent = selectedFiles.length;
+    document.getElementById('fileTags').innerHTML = selectedFiles.map(f =>
+        `<span class="file-tag">${f.name}</span>`).join('');
+}
+function clearFiles() {
+    selectedFiles = [];
+    fileInput.value = '';
+    document.getElementById('fileList').style.display = 'none';
+}
+
+async function doUpload() {
+    if (!selectedFiles.length) { alert('请先选择Excel PO文件'); return; }
+    const btn = document.getElementById('btnUpload');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>写入中...';
+
+    const fd = new FormData();
+    selectedFiles.forEach(f => fd.append('files', f));
+
+    try {
+        const resp = await fetch('/api/master-schedule-upload', { method: 'POST', body: fd });
+        const data = await resp.json();
+        const rc = document.getElementById('resultCard');
+        const content = document.getElementById('resultContent');
+        rc.style.display = '';
+
+        if (data.ok) {
+            let html = `<div class="alert alert-success mb-2"><i class="bi bi-check-circle me-1"></i><b>${_escHtml(data.msg || '')}</b></div>`;
+            if (data.errors && data.errors.length) {
+                html += `<div class="alert alert-warning mb-2"><b>解析失败：</b><br>${data.errors.join('<br>')}</div>`;
+            }
+            // 重复PO去重提示
+            if (data.dedup_report && data.dedup_report.length) {
+                html += `<div class="alert alert-warning mb-2" style="border-left:4px solid #fd7e14;">`;
+                html += `<i class="bi bi-copy me-1"></i><b>重复PO自动去重 (${data.dedup_report.length}组)：</b><br>`;
+                data.dedup_report.forEach(r => { html += `${_escHtml(r)}<br>`; });
+                html += `</div>`;
+            }
+            // 黑名单忽略提示
+            if (data.ignored_report && data.ignored_report.length) {
+                html += `<div class="alert alert-secondary mb-2" style="border-left:4px solid #6c757d;">`;
+                html += `<i class="bi bi-slash-circle me-1"></i><b>已忽略货号（不入排期）：</b><br>`;
+                data.ignored_report.forEach(r => {
+                    html += `货号 <b>${_escHtml(r.item)}</b> × ${r.count}行 <span class="text-muted">(${_escHtml(r.source)})</span><br>`;
+                });
+                html += `</div>`;
+            }
+            // 数据异常警告（PDF转Excel丢失数据）
+            if (data.data_warnings && data.data_warnings.length) {
+                html += `<div class="alert alert-danger mb-2" style="border-left:4px solid #dc3545;font-weight:bold;">`;
+                html += `<i class="bi bi-exclamation-octagon me-1"></i><b>数据异常（可能PDF转Excel丢失数据，请核对原始PO）：</b><br>`;
+                data.data_warnings.forEach(w => { html += `<span style="color:#dc3545;">${_escHtml(w)}</span><br>`; });
+                html += `</div>`;
+            }
+            // 备注缺失警告
+            if (data.warnings && data.warnings.length) {
+                html += `<div class="alert alert-danger mb-2"><i class="bi bi-exclamation-triangle me-1"></i><b>备注警告：</b><br>`;
+                data.warnings.forEach(w => { html += `${_escHtml(w)}<br>`; });
+                html += `</div>`;
+            }
+            // 修改单明细
+            if (data.mod_details && data.mod_details.length) {
+                html += `<div class="mb-2"><b class="text-primary"><i class="bi bi-pencil-square me-1"></i>修改明细 (${data.mod_details.length}行)：</b>`;
+                html += `<div class="list-group list-group-flush mt-1" style="font-size:0.85rem;">`;
+                data.mod_details.forEach(d => {
+                    if (typeof d === 'object') {
+                        const changes = d.changes.map(c => `<span class="badge bg-info text-dark me-1">${_escHtml(c)}</span>`).join('');
+                        html += `<div class="list-group-item py-1 px-2"><b>${_escHtml(d.item)}</b> <span class="text-muted">(行${d.row})</span><br>${changes}</div>`;
+                    } else {
+                        html += `<div class="list-group-item py-1 px-2">${_escHtml(String(d))}</div>`;
+                    }
+                });
+                html += `</div></div>`;
+            }
+            // 新单明细
+            if (data.new_details && data.new_details.length) {
+                html += `<div class="mb-2"><b class="text-success"><i class="bi bi-plus-circle me-1"></i>新增货号 (${data.new_details.length}行)：</b>`;
+                html += `<div class="mt-1" style="font-size:0.85rem;">`;
+                data.new_details.forEach(item => {
+                    html += `<span class="badge bg-success me-1 mb-1">${_escHtml(String(item))}</span>`;
+                });
+                html += `</div></div>`;
+            }
+            // 新单Excel下载按钮
+            if (data.export_file) {
+                html += `<div class="mt-2"><a href="/api/master-export-download/${encodeURIComponent(data.export_file)}" class="btn btn-primary btn-sm"><i class="bi bi-download me-1"></i>下载新单Excel: ${_escHtml(data.export_file)}</a></div>`;
+            }
+            // 分排期归属展示
+            if (data.schedule_info) {
+                const si = data.schedule_info;
+                const matched = si.matched || {};
+                const unmatched = si.unmatched || [];
+                const mKeys = Object.keys(matched);
+                if (mKeys.length > 0 || unmatched.length > 0) {
+                    html += `<hr><div class="mb-2"><b><i class="bi bi-diagram-3 me-1"></i>分排期归属：</b></div>`;
+                    const byFile = {};
+                    mKeys.forEach(item => {
+                        matched[item].forEach(loc => {
+                            const key = loc.file;
+                            if (!byFile[key]) byFile[key] = [];
+                            byFile[key].push({item, sheet: loc.sheet});
+                        });
+                    });
+                    Object.keys(byFile).forEach(file => {
+                        const items = byFile[file];
+                        const sheets = [...new Set(items.map(i => i.sheet))];
+                        html += `<div class="card card-body py-1 px-2 mb-1" style="font-size:0.85rem;">`;
+                        html += `<div><i class="bi bi-file-earmark-spreadsheet text-success me-1"></i><b>${_escHtml(file)}</b></div>`;
+                        sheets.forEach(sh => {
+                            const shItems = items.filter(i => i.sheet === sh).map(i => i.item);
+                            html += `<div class="ms-3"><span class="text-muted">${_escHtml(sh)}：</span>`;
+                            shItems.forEach(it => { html += `<span class="badge bg-primary me-1">${_escHtml(it)}</span>`; });
+                            html += `</div>`;
+                        });
+                        html += `</div>`;
+                    });
+                    if (unmatched.length > 0) {
+                        html += `<div class="mt-1" style="font-size:0.85rem;"><span class="text-warning"><i class="bi bi-question-circle me-1"></i>未识别归属：</span>`;
+                        unmatched.forEach(it => { html += `<span class="badge bg-warning text-dark me-1">${_escHtml(it)}</span>`; });
+                        html += `</div>`;
+                    }
+                }
+            }
+            content.innerHTML = html;
+            clearFiles();
+        } else {
+            content.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle me-1"></i>${_escHtml(data.error || '')}</div>`;
+        }
+    } catch(e) {
+        document.getElementById('resultCard').style.display = '';
+        document.getElementById('resultContent').innerHTML =
+            `<div class="alert alert-danger">请求失败: ${_escHtml(e.message || '')}</div>`;
+    }
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>写入总排期';
+    checkStatus();
+}
+
+function doDownload() {
+    window.open('/api/master-schedule-download', '_blank');
+}
+
+async function doYellowSummary() {
+    const btn = document.getElementById('btnSummary');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>扫描中...';
+    const content = document.getElementById('resultContent');
+    document.getElementById('resultCard').style.display = '';
+    content.innerHTML = '<div class="text-muted"><i class="bi bi-hourglass-split me-1"></i>正在扫描总排期有填充行，请稍候（首次较慢）...</div>';
+    try {
+        const resp = await fetch('/api/yellow-summary', {method:'POST'});
+        const data = await resp.json();
+        if (data.error) {
+            content.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle me-1"></i>${_escHtml(data.error)}</div>`;
+        } else if (data.total === 0) {
+            content.innerHTML = `<div class="alert alert-info">未发现整行填充的行</div>`;
+        } else {
+            let html = `<div class="alert alert-success mb-2 py-2 d-flex justify-content-between align-items-center"><div><i class="bi bi-check-circle me-1"></i>`;
+            html += `共 <b>${data.total}</b> 行整行填充，分布在 <b>${data.group_count}</b> 个分排期sheet`;
+            if (data.unmatched && data.unmatched.length > 0) html += `，<span class="text-warning fw-bold">${data.unmatched.length} 个货号未匹配</span>`;
+            html += `</div><button class="btn btn-primary btn-sm ms-2" onclick="doDownloadSummary()"><i class="bi bi-download me-1"></i>下载Excel</button></div>`;
+            // 分组表格
+            html += `<div style="max-height:500px;overflow-y:auto;">`;
+            html += `<table class="table table-sm table-bordered" style="font-size:0.82rem;">`;
+            html += `<thead class="table-primary text-center"><tr><th>分排期文件</th><th>Sheet</th><th>货号</th><th>中文名</th><th>行数</th><th>数量</th><th>小计</th></tr></thead><tbody>`;
+            (data.groups || []).forEach((g, gi) => {
+                const bg = gi % 2 === 0 ? '' : ' style="background:#f8f9fa;"';
+                g.items.forEach((it, ii) => {
+                    html += `<tr${bg}>`;
+                    html += ii === 0 ? `<td rowspan="${g.items.length+1}">${_escHtml(g.file)}</td><td rowspan="${g.items.length+1}">${_escHtml(g.sheet)}</td>` : '';
+                    html += `<td><b>${_escHtml(it.item)}</b></td><td>${_escHtml(it.cn_name)}</td><td class="text-center">${it.count}</td><td class="text-end">${it.qty_sum ? it.qty_sum.toLocaleString() : ''}</td><td></td></tr>`;
+                });
+                html += `<tr class="table-warning fw-bold"><td colspan="4" class="text-end">小计</td><td class="text-center">${g.total}</td><td></td><td></td></tr>`;
+            });
+            // 未匹配
+            if (data.unmatched && data.unmatched.length) {
+                html += `<tr class="table-danger"><td colspan="7" class="fw-bold">未匹配分排期</td></tr>`;
+                data.unmatched.forEach(u => {
+                    html += `<tr class="table-danger"><td></td><td></td><td><b>${_escHtml(u.item)}</b></td><td>${_escHtml(u.cn_name)}</td><td class="text-center">${u.count}</td><td class="text-end">${u.qty_sum ? u.qty_sum.toLocaleString() : ''}</td><td></td></tr>`;
+                });
+            }
+            // 合计
+            html += `<tr class="table-success fw-bold"><td colspan="4" class="text-end">合计</td><td class="text-center">${data.total}</td><td></td><td></td></tr>`;
+            html += `</tbody></table></div>`;
+            content.innerHTML = html;
+        }
+    } catch(e) {
+        content.innerHTML = `<div class="alert alert-danger">请求失败: ${_escHtml(e.message || '')}</div>`;
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-bar-chart me-1"></i>有填充行汇总';
+}
+
+async function doDownloadSummary() {
+    try {
+        const resp = await fetch('/api/yellow-summary-download', {method:'POST'});
+        if (!resp.ok) {
+            const d = await resp.json();
+            alert(d.error || '下载失败');
+            return;
+        }
+        const blob = await resp.blob();
+        const cd = resp.headers.get('content-disposition') || '';
+        let fname = '有填充行汇总.xlsx';
+        const m = cd.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+        if (m) fname = decodeURIComponent(m[1].replace(/"/g,''));
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fname;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch(e) {
+        alert('下载失败: ' + e.message);
+    }
+}
+
+async function uploadMasterFile(input) {
+    if (!input.files.length) return;
+    const file = input.files[0];
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+        const resp = await fetch('/api/master-schedule-upload-file', {method:'POST', body: fd});
+        const data = await resp.json();
+        if (data.ok) {
+            alert(data.msg);
+            checkStatus();
+        } else {
+            alert(data.error || '上传失败');
+        }
+    } catch(e) {
+        alert('上传失败: ' + e.message);
+    }
+    input.value = '';
+}
+
+async function checkStatus() {
+    try {
+        const resp = await fetch('/api/master-schedule-info');
+        const data = await resp.json();
+        document.getElementById('masterPath').value = data.path || '';
+        const badge = document.getElementById('file-status');
+        if (!data.exists) {
+            badge.className = 'badge bg-danger small'; badge.textContent = '文件不存在';
+        } else if (data.locked) {
+            badge.className = 'badge bg-warning small'; badge.textContent = '文件被占用';
+        } else {
+            badge.className = 'badge bg-success small'; badge.textContent = '文件可用';
+        }
+    } catch(e) {
+        document.getElementById('file-status').className = 'badge bg-secondary small';
+        document.getElementById('file-status').textContent = '检查失败';
+    }
+}
+async function openFileBrowser() {
+    const modal = new bootstrap.Modal(document.getElementById('fileBrowserModal'));
+    modal.show();
+    browseDir('');
+}
+async function browseDir(dirPath) {
+    const listEl = document.getElementById('browseList');
+    const curEl = document.getElementById('browseCurrent');
+    listEl.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-secondary"></div> 加载中...</div>';
+    try {
+        const resp = await fetch('/api/browse-directory', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({path: dirPath})
+        });
+        const data = await resp.json();
+        if (data.error) { listEl.innerHTML = `<div class="text-danger p-3">${data.error}</div>`; return; }
+        curEl.textContent = data.current;
+        let html = '';
+        if (data.parent) {
+            html += `<div class="browse-item" onclick="browseDir('${data.parent.replace(/\\/g,'\\\\')}')">
+                <i class="bi bi-arrow-up-circle text-secondary"></i><span>..</span></div>`;
+        }
+        for (const d of data.dirs) {
+            const full = data.current + '\\' + d;
+            html += `<div class="browse-item" onclick="browseDir('${full.replace(/\\/g,'\\\\')}')">
+                <i class="bi bi-folder-fill text-warning"></i><span>${d}</span></div>`;
+        }
+        for (const f of data.files) {
+            const full = data.current + '\\' + f;
+            html += `<div class="browse-item is-file" onclick="selectFile('${full.replace(/\\/g,'\\\\')}')">
+                <i class="bi bi-file-earmark-excel-fill text-success"></i><span>${f}</span></div>`;
+        }
+        if (!data.dirs.length && !data.files.length) {
+            html = '<div class="text-muted p-3">此目录下没有文件夹或xlsx文件</div>';
+        }
+        listEl.innerHTML = html;
+    } catch(e) { listEl.innerHTML = `<div class="text-danger p-3">加载失败: ${e.message}</div>`; }
+}
+async function selectFile(filePath) {
+    try {
+        const resp = await fetch('/api/master-schedule-set-path', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({path: filePath})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('fileBrowserModal')).hide();
+            checkStatus();
+        } else { alert(data.error); }
+    } catch(e) { alert('选择失败: '+e.message); }
+}
+async function resetPath() {
+    try {
+        const resp = await fetch('/api/master-schedule-set-path', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({path: ''})
+        });
+        const data = await resp.json();
+        if (data.ok) { alert(data.msg); checkStatus(); }
+    } catch(e) { alert('恢复失败: '+e.message); }
+}
+
+checkStatus();
+setInterval(checkStatus, 30000);
+</script>
+
+<!-- 文件浏览器模态框 -->
+<div class="modal fade" id="fileBrowserModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title"><i class="bi bi-folder2-open me-1"></i>选择总排期文件</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="browseCurrent" class="browse-current"></div>
+        <div id="browseList" class="browse-list border rounded"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

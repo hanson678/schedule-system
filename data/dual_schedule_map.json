@@ -1,0 +1,13 @@
+{
+  "_说明": "双排期货号配置：基础货号 → {targets: 目标系列列表, mode: 插入模式}",
+  "_mode说明": "append=末尾追加, slt_insert=SLT后插入, mid_insert=S00x后插入尾缀前, s_insert=S00x前插入（通用：任意前缀+任意尾缀）, none=不加系列号",
+
+  "77785": {"targets": ["77673", "77711"], "mode": "mid_insert"},
+  "77758": {"targets": ["77673", "77711"], "mode": "none"},
+  "77721": {"targets": ["77673", "77711"], "mode": "slt_insert"},
+  "77869": {"targets": ["77772", "77794"], "mode": "s_insert"},
+  "77896": {"targets": ["77772", "77794"], "mode": "slt_insert"},
+  "92123": {"targets": ["9298", "92104"], "mode": "append"},
+  "92124": {"targets": ["9298", "92104", "92119"], "mode": "append"},
+  "92149": {"targets": ["92119", "92129"], "mode": "none"}
+}
