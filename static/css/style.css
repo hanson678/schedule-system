@@ -308,6 +308,13 @@ body {
 /* 未匹配行 */
 .action-item.unmatched { background: #fffbeb; border-radius: 6px; padding: 4px 8px; margin: 2px 0; }
 
+/* 混装箱提示 */
+.mixed-carton-tip {
+    font-size: 0.72rem; margin-top: 3px; padding: 4px 10px;
+    background: #fff7ed; border-radius: 6px; border: 1px solid #fed7aa;
+    color: #92400e; display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+}
+
 /* 路径浏览器 */
 .path-bar { border: 2px solid var(--accent); border-radius: 14px; background: linear-gradient(135deg, #eff6ff, #dbeafe); }
 .browse-item {

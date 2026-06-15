@@ -1,3 +1,9 @@
 {
-  "z_drive_path": "C:\\Users\\Administrator\\Desktop\\分排期副本"
+  "z_drive_path": "C:\\Users\\Administrator\\Desktop\\主排期备份3.16晚",
+  "email_server": "imaphz.qiye.163.com",
+  "email_port": 993,
+  "email_user": "sales11@hanson2.com",
+  "email_password": "MjAwNTA2MjB6ZW5n",
+  "email_ssl": true,
+  "port": 5003
 }
