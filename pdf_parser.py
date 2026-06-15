@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """PO PDF完整解析 v4 - 不漏行 + 取消单检测 + 异常分类"""
-import os, re, logging
+import os, re, logging, json
 import pdfplumber
 
 
@@ -282,6 +282,16 @@ class PDFParser:
         result = []
         mixed_groups_info = []
 
+        # 预加载手动混装映射
+        _map_file = os.path.join(os.path.dirname(__file__), 'data', 'mixed_carton_map.json')
+        _mixed_map = {}
+        if os.path.isfile(_map_file):
+            try:
+                with open(_map_file, 'r', encoding='utf-8') as _f:
+                    _mixed_map = json.load(_f)
+            except Exception:
+                pass
+
         for i, line in enumerate(lines):
             if i in general_skip:
                 continue
@@ -405,14 +415,56 @@ class PDFParser:
                             'customer_po': line.get('customer_po', ''),
                         })
                 else:
-                    result.append(line)
+                    # 手动混装映射
+                    _manual_comps = _mixed_map.get(base, [])
+
+                    if _manual_comps and price > 0:
+                        # 手动映射拆分：与MEC拆分逻辑一致
+                        carton_count = qty
+                        # 提取后缀（如 -S001）
+                        if sku_spec.upper().startswith(base.upper() + '-'):
+                            after_base = sku_spec[len(base):]
+                        else:
+                            after_base = ''
+                            spec_parts = sku_spec.split('-')
+                            for p in spec_parts[1:]:
+                                if re.match(r'S\d+', p, re.I):
+                                    after_base = f'-{p}'
+                                    break
+
+                        group_comps = []
+                        for comp_sku in _manual_comps:
+                            new_line = dict(line)
+                            full_sku = f"{base}-{comp_sku}{after_base}"
+                            new_line['sku'] = full_sku
+                            new_line['sku_spec'] = full_sku
+                            new_line['item_code'] = comp_sku
+                            new_line['carton_count'] = carton_count
+                            new_line['is_mixed_carton'] = True
+                            new_line['needs_user_confirmation'] = True
+                            new_line['mixed_parent_sku'] = sku_spec
+                            result.append(new_line)
+                            group_comps.append({'sku': full_sku, 'qty': qty})
+                            logging.info(f'[手动混装] {sku_spec} -> {full_sku} (箱数={carton_count})')
+
+                        if group_comps:
+                            mixed_groups_info.append({
+                                'line_no': line_no,
+                                'parent_sku': sku_spec,
+                                'type': 'manual_mixed_split',
+                                'components': group_comps,
+                                'customer_po': line.get('customer_po', ''),
+                            })
+                    else:
+                        result.append(line)
 
         self._mixed_groups_info = mixed_groups_info
         return result
 
     # 卡板货号（SLB/SLD/SLT/SK/MTQ）识别正则
-    _PALLET_MAIN_RE = re.compile(r'^(?:\d+(?:SLB|SLD|SLT|SK)\d*|MTQ\d+)(?:-(?!P\d)|$)', re.I)
-    _PALLET_PART_RE = re.compile(r'^(?:\d+(?:SLB|SLD|SLT|SK)\d*|MTQ\d+)-P\d', re.I)
+    # 兼容新旧两种格式：77843SLB-S002（旧）、77843Q1-SLB-S002 / 9574-SLB-S001（新）
+    _PALLET_MAIN_RE = re.compile(r'^(?:\d+(?:[A-Z0-9]*-)?(?:SLB|SLD|SLT|SK)\d*|MTQ\d+)(?:-(?!P\d)|$)', re.I)
+    _PALLET_PART_RE = re.compile(r'^(?:\d+(?:[A-Z0-9]*-)?(?:SLB|SLD|SLT|SK)\d*|MTQ\d+)-P\d', re.I)
 
     def _resolve_pallet_groups(self, lines):
         """卡板货号合并：同Line下 MAIN + Px零件 + PRODUCT 合并为一条
@@ -956,8 +1008,9 @@ class PDFParser:
         'uk': '英国', 'great britain': '英国',
         'uae': '阿联酋', 'united arab emirates': '阿联酋',
         'utd.arab emir': '阿联酋', 'utdarab emir': '阿联酋',
-        'russia': '俄罗斯', 'russian fed': '俄罗斯', 'russian fed.': '俄罗斯',
-        'russian federation': '俄罗斯',
+        'russia': '俄罗斯',
+        'russian fed': '俄罗斯联邦', 'russian fed.': '俄罗斯联邦',
+        'russian federation': '俄罗斯联邦',
         'korea': '韩国', 'south korea': '韩国',
         'czech republic': '捷克', 'czechia': '捷克',
         'hong kong': '香港', 'taiwan': '台湾',
@@ -966,8 +1019,9 @@ class PDFParser:
         'ivory coast': '科特迪瓦', "cote d'ivoire": '科特迪瓦',
         'viet nam': '越南',
         'slovak republic': '斯洛伐克',
+        'turkey': '土耳其', 'türkiye': '土耳其',
         # babel返回的正式名→惯用简称
-        '阿拉伯联合酋长国': '阿联酋', '俄罗斯联邦': '俄罗斯',
+        '阿拉伯联合酋长国': '阿联酋',
         '大韩民国': '韩国', '朝鲜': '朝鲜',
     }
     # pycountry+babel 翻译缓存（类级别，进程内只初始化一次）
@@ -978,8 +1032,8 @@ class PDFParser:
         if not c: return ''
         import re as _re
         raw = _re.sub(r'[\n\r]+', ' ', str(c)).strip()
-        # 取逗号前段、去尾点、规范空格
-        lookup = raw.split(',')[0].strip().rstrip('.').strip()
+        # 取逗号前段、去尾点、规范空格（Excel单元格可能含多空格如"United  Kingdom"）
+        lookup = _re.sub(r'\s+', ' ', raw.split(',')[0].strip()).rstrip('.').strip()
         cl = lookup.lower()
 
         # 1. 覆盖表（优先级最高：处理缩写、别名、babel长名→短名）

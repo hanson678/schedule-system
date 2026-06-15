@@ -91,6 +91,9 @@
                 <button class="btn btn-warning shadow-sm px-3" onclick="undoSelected()" style="font-weight:bold; border-radius:10px;">
                     <i class="bi bi-arrow-counterclockwise me-1"></i>撤销选中
                 </button>
+                <button class="btn btn-outline-danger btn-sm" onclick="deleteAllUndo()" title="清空所有撤回记录（不恢复排期）">
+                    <i class="bi bi-trash me-1"></i>全部清除
+                </button>
             </div>
         </div>
         <div id="undo-list" style="max-height:250px; overflow-y:auto;"></div>
@@ -118,7 +121,25 @@
             </div>
         </div>
 
-        <!-- 路径浏览器弹窗 -->
+        <!-- 总排期入单（直接写入Z盘总排期） -->
+        <div class="card mb-3 border-success">
+            <div class="card-body py-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <i class="bi bi-table text-success" style="font-size:1.2rem;"></i>
+                    <span class="fw-bold text-success" style="font-size:0.85rem;">总排期入单（Z盘）：</span>
+                    <input type="file" id="master-files" multiple accept=".xlsx,.xls" style="font-size:0.8rem;max-width:300px;" class="form-control form-control-sm">
+                    <button class="btn btn-success btn-sm" onclick="masterScheduleUpload()" style="white-space:nowrap;">
+                        <i class="bi bi-plus-circle me-1"></i>写入总排期
+                    </button>
+                    <button class="btn btn-outline-success btn-sm" onclick="masterScheduleDownload()" style="white-space:nowrap;">
+                        <i class="bi bi-download me-1"></i>下载
+                    </button>
+                    <span id="master-result" class="text-success small"></span>
+                </div>
+            </div>
+        </div>
+
+<!-- 路径浏览器弹窗 -->
         <div class="modal fade" id="pathModal" tabindex="-1">
             <div class="modal-dialog modal-lg">
                 <div class="modal-content" style="border-radius:16px;">
@@ -168,9 +189,48 @@
             </div>
         </div>
 
+        <!-- 同line多货号确认弹窗 -->
+        <div class="modal fade" id="mixedGroupModal" tabindex="-1" data-bs-backdrop="static">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content" style="border-radius:16px;">
+                    <div class="modal-header" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-radius:16px 16px 0 0;">
+                        <h6 class="modal-title"><i class="bi bi-boxes me-2 text-warning"></i>检测到同line多货号，请确认入单方式</h6>
+                    </div>
+                    <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
+                        <p class="small text-muted mb-3">以下PO中检测到同一Line包含多个货号（子行价格=0，继承父行的单价/内外箱/出货期/客PO）。<br>
+                        <b>确认</b>=按拆分方式自动入单（各货号各自独立写入对应排期）；<b>拒绝</b>=该组货号跳过自动入单，汇总显示供手动处理。</p>
+                        <div id="mixed-groups-list"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary btn-sm" id="mixedRejectAll"><i class="bi bi-x-circle me-1"></i>全部拒绝（手动入）</button>
+                        <button class="btn btn-primary btn-sm" id="mixedConfirmAll"><i class="bi bi-check-circle me-1"></i>全部确认（自动入）</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 定时入单详情弹窗 -->
+        <div class="modal fade" id="schedDetailModal" tabindex="-1">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content" style="border-radius:16px;">
+                    <div class="modal-header" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:16px 16px 0 0;">
+                        <h6 class="modal-title"><i class="bi bi-list-check me-2 text-primary"></i>定时入单详情</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body" style="max-height:70vh;overflow-y:auto;" id="schedDetailBody">
+                        <div class="text-center text-muted py-4"><i class="bi bi-hourglass-split me-2"></i>加载中...</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 上传区 -->
         <div class="card glass-card mb-3" id="upload-card">
             <div class="card-body">
+                <input type="file" id="scheduled-file-input" accept=".pdf,.xlsx,.xls" multiple style="display:none;">
                 <div class="upload-zone" id="upload-zone">
                     <input type="file" id="pdf-input" accept=".pdf,.xlsx,.xls" multiple style="display:none;">
                     <i class="bi bi-cloud-arrow-up upload-icon"></i>
@@ -178,6 +238,45 @@
                     <small class="text-muted" style="position:relative;z-index:1;">
                         支持PDF和Excel(WPS转换) | 自动识别新单/修改单/取消单
                     </small>
+                </div>
+                <!-- 定时入单选项 -->
+                <div class="d-flex align-items-center gap-2 mt-2 flex-wrap" id="schedule-upload-bar">
+                    <button class="btn btn-sm btn-outline-primary" onclick="document.getElementById('scheduled-file-input').click()">
+                        <i class="bi bi-folder2-open me-1"></i>选择文件
+                    </button>
+                    <span class="text-muted small" id="sched-file-label">未选择文件</span>
+                    <input type="datetime-local" id="schedule-upload-time" class="form-control form-control-sm" style="width:200px;">
+                    <button class="btn btn-sm btn-primary" onclick="scheduleUpload()">
+                        <i class="bi bi-clock-fill me-1"></i>定时入单
+                    </button>
+                </div>
+                <!-- 定时任务列表 -->
+                <div id="scheduled-uploads-list" style="display:none;" class="mt-2"></div>
+                <!-- 被锁等待重试面板 -->
+                <div id="locked-retry-panel" style="display:none;" class="mt-2"></div>
+            </div>
+        </div>
+
+        <!-- 队列处理进度面板（>20个文件时显示） -->
+        <div id="queue-area" style="display:none;" class="fade-in mb-3">
+            <div class="card glass-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0 fw-bold"><i class="bi bi-stack me-2 text-primary"></i>批量队列处理中</h6>
+                        <span class="badge bg-primary" id="queue-batch-badge">第1批/共1批</span>
+                    </div>
+                    <div class="progress mb-2" style="height:12px;">
+                        <div id="queue-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div class="d-flex gap-3 small mb-2">
+                        <span><i class="bi bi-check2-circle text-success me-1"></i>成功 <b id="queue-done">0</b></span>
+                        <span><i class="bi bi-x-circle text-danger me-1"></i>失败 <b id="queue-failed">0</b></span>
+                        <span><i class="bi bi-question-circle text-warning me-1"></i>待确认 <b id="queue-confirm">0</b></span>
+                        <span class="ms-auto text-muted" id="queue-total-label"></span>
+                    </div>
+                    <div class="small text-muted" id="queue-current-files" style="font-size:0.78rem;"></div>
+                    <div id="queue-error-msg" class="text-danger small mt-1" style="display:none;"></div>
                 </div>
             </div>
         </div>
@@ -208,6 +307,24 @@
                     </div>
                 </div>
             </div>
+            <!-- 手动入单汇总（按PO分类，含原因说明） -->
+            <div id="manual-summary-panel" style="display:none;" class="mb-3">
+                <div class="card" style="border:2px solid #f59e0b;border-radius:14px;">
+                    <div class="card-header d-flex justify-content-between align-items-center" style="background:#fffbeb;border-radius:12px 12px 0 0;">
+                        <span class="text-warning fw-bold">
+                            <i class="bi bi-hand-index-fill me-2"></i>需手动入单汇总（按PO分类）
+                            <span id="manual-summary-count" class="badge bg-warning text-dark ms-2">0</span>
+                        </span>
+                        <div class="d-flex align-items-center gap-2">
+                            <small id="manual-done-progress" class="text-muted" style="font-size:0.75rem;">已完成 0/0</small>
+                            <button class="btn btn-outline-success btn-sm" onclick="toggleManualDoneAll()" style="font-size:0.75rem;padding:2px 8px;">
+                                <i class="bi bi-check2-all me-1"></i>全部标记
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body py-2" id="manual-summary-list"></div>
+                </div>
+            </div>
             <div id="orders-list"></div>
             <div class="d-flex gap-2 mt-3" id="action-bar" style="display:none;">
                 <button class="btn btn-primary btn-lg flex-fill" onclick="batchExecute()">
@@ -228,6 +345,25 @@
                         <h5 class="mt-2">处理完成</h5>
                         <div id="done-summary"></div>
                     </div>
+                </div>
+            </div>
+
+            <!-- 比例待处理面板 -->
+            <div class="card mb-3" id="ratio-pending-panel" style="display:none; border:2px solid #e67e00; border-radius:12px;">
+                <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <span class="fw-bold" style="color:#e67e00;">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>比例待处理
+                        <span class="badge bg-warning text-dark ms-1" id="ratio-pending-count">0</span>
+                    </span>
+                    <button class="btn btn-sm btn-outline-warning" onclick="document.getElementById('ratio-pending-panel').style.display='none'">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="card-body p-2">
+                    <div class="small text-muted mb-2">
+                        <i class="bi bi-info-circle me-1"></i>以下货号的备注含比例分配信息，请手动确认并拉取对应分配列
+                    </div>
+                    <div id="ratio-pending-list"></div>
                 </div>
             </div>
 
@@ -252,41 +388,35 @@
                 </div>
             </div>
 
-            <!-- 一键重试+定时自动重入 -->
-            <div class="card mb-3" id="reentry-card" style="display:none; border:2px solid #0d6efd; border-radius:12px;">
-                <div class="card-header bg-primary bg-opacity-10">
-                    <span class="fw-bold text-primary">
-                        <i class="bi bi-arrow-repeat me-1"></i>一键重新入单
+            <!-- 未能保存 + 重新入单（合并卡） -->
+            <div class="card mb-3" id="reentry-card" style="display:none; border:2px solid #fd7e14; border-radius:12px;">
+                <div class="card-header" style="background:rgba(253,126,20,0.1);">
+                    <span class="fw-bold" style="color:#b45309;">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        <span id="failed-title">未能保存到Z盘</span>
                     </span>
                 </div>
                 <div class="card-body py-3">
-                    <p class="small text-muted mb-2">删除错误行后，可一键重新入单（使用最新代码处理同一批PDF）</p>
-                    <div class="d-flex gap-2 align-items-center mb-2">
-                        <button class="btn btn-primary" onclick="reentryNow()">
+                    <!-- 失败文件列表 -->
+                    <div id="failed-list" class="mb-3"></div>
+                    <!-- 操作按钮区 -->
+                    <div class="d-flex gap-2 align-items-center flex-wrap">
+                        <button class="btn btn-warning" onclick="reentryNow()">
                             <i class="bi bi-play-fill me-1"></i>立即重新入单
                         </button>
+                        <button class="btn btn-outline-warning" onclick="retryFailed()" id="retry-failed-btn" style="display:none;">
+                            <i class="bi bi-arrow-repeat me-1"></i>一键重试保存
+                        </button>
                         <span class="text-muted">或</span>
-                        <div class="input-group" style="width:200px;">
+                        <div class="input-group" style="width:auto; max-width:220px;">
                             <input type="time" id="schedule-time" class="form-control form-control-sm">
-                            <button class="btn btn-outline-primary btn-sm" onclick="scheduleReentry()">
+                            <button class="btn btn-outline-warning btn-sm" onclick="scheduleReentry()">
                                 <i class="bi bi-clock me-1"></i>定时
                             </button>
                         </div>
                     </div>
-                    <div id="reentry-result" style="display:none;"></div>
+                    <div id="reentry-result" style="display:none;" class="mt-2"></div>
                     <div id="scheduled-info" style="display:none;" class="mt-2"></div>
-                </div>
-            </div>
-
-            <div class="card border-warning mb-3" id="failed-card" style="display:none;">
-                <div class="card-header bg-warning text-dark" id="failed-title">
-                    <i class="bi bi-exclamation-triangle me-2"></i>部分文件处理失败
-                </div>
-                <div class="card-body" id="failed-list"></div>
-                <div class="card-footer">
-                    <button class="btn btn-warning" onclick="retryFailed()">
-                        <i class="bi bi-arrow-repeat me-1"></i>一键重试保存
-                    </button>
                 </div>
             </div>
 
@@ -474,6 +604,21 @@
 <script>
 let ORDERS = [];
 let FAILED = [];
+const TYPE_ICONS = {'new':'<span class="badge bg-success me-1">新增</span>',
+                    'modify':'<span class="badge bg-primary me-1">修改</span>',
+                    'cancel':'<span class="badge bg-danger me-1">取消</span>'};
+
+// ========== XSS防护工具函数（#31）==========
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// 用于onclick属性内的JS字符串转义（#32/#33）
+function escapeJs(str) {
+    if (str == null) return '';
+    return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/</g, '\\x3c');
+}
 
 // ========== 动态标语 ==========
 const SLOGANS = [
@@ -510,10 +655,36 @@ function typeSlogan() {
 initSlogan();
 
 // ========== 仪表盘 ==========
+// 加载系统配置到 window._sysConfig
+async function loadSysConfig() {
+    try {
+        const data = await App.api('/api/config');
+        if (data.retry_interval_min) {
+            const el = document.getElementById('retryIntervalInput');
+            if (el) el.value = data.retry_interval_min;
+            window._sysConfig = window._sysConfig || {};
+            window._sysConfig.retry_interval_min = data.retry_interval_min;
+        }
+    } catch(e) {}
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     loadDashboard();
     loadRecentHistory();
     loadIssues();
+    loadSysConfig();
+
+    // 从sessionStorage恢复上次的解析结果（跳转其他页面回来不丢失）
+    try {
+        const saved = sessionStorage.getItem('_orders');
+        if (saved) {
+            ORDERS = JSON.parse(saved);
+            if (ORDERS.length > 0) {
+                renderOrders();
+                document.getElementById('upload-card').style.display = 'none';
+            }
+        }
+    } catch(e) {}
 
     const zone = document.getElementById('upload-zone');
     const input = document.getElementById('pdf-input');
@@ -525,6 +696,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.dataTransfer.files.length) { input.files = e.dataTransfer.files; batchUpload(); }
     });
     input.addEventListener('change', batchUpload);
+
+    // 定时入单：文件选择监听
+    const schedInput = document.getElementById('scheduled-file-input');
+    schedInput.addEventListener('change', () => {
+        const n = schedInput.files.length;
+        document.getElementById('sched-file-label').textContent =
+            n > 0 ? `已选 ${n} 个文件` : '未选择文件';
+    });
+    // 定时入单：默认时间设为当前+1小时
+    const now = new Date();
+    now.setHours(now.getHours() + 1);
+    now.setMinutes(Math.ceil(now.getMinutes() / 5) * 5, 0, 0);
+    const pad = n => String(n).padStart(2, '0');
+    document.getElementById('schedule-upload-time').value =
+        `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    // 加载已有定时任务
+    loadScheduledUploads();
 });
 
 async function loadDashboard() {
@@ -537,32 +725,736 @@ async function loadDashboard() {
         document.getElementById('d-files').textContent = d.file_count;
 
         if (d.locked_count > 0) {
-            document.getElementById('locked-card').style.display = 'block';
-            document.getElementById('locked-count').textContent = d.locked_count;
-            document.getElementById('locked-list').innerHTML =
-                d.locked_files.map(f => `<div class="locked-file"><i class="bi bi-lock-fill me-1"></i>${f}</div>`).join('');
+            // #36 修复：检查DOM元素存在后再操作
+            const lockedCard = document.getElementById('locked-card');
+            const lockedCount = document.getElementById('locked-count');
+            const lockedList = document.getElementById('locked-list');
+            if (lockedCard) lockedCard.style.display = 'block';
+            if (lockedCount) lockedCount.textContent = d.locked_count;
+            if (lockedList) lockedList.innerHTML =
+                d.locked_files.map(f => `<div class="locked-file"><i class="bi bi-lock-fill me-1"></i>${escapeHtml(f)}</div>`).join('');
         }
     } catch(e) {}
 }
+
+// ========== 定时入单 ==========
+async function scheduleUpload() {
+    const fileInput = document.getElementById('scheduled-file-input');
+    const timeInput = document.getElementById('schedule-upload-time');
+    if (!fileInput.files.length) {
+        App.alert('请先选择文件', 'warning');
+        return;
+    }
+    if (!timeInput.value) {
+        App.alert('请选择定时时间', 'warning');
+        return;
+    }
+    // 检查时间是否在未来
+    const schedTime = new Date(timeInput.value);
+    if (schedTime <= new Date()) {
+        App.alert('定时时间必须在当前时间之后', 'warning');
+        return;
+    }
+    const fd = new FormData();
+    for (let f of fileInput.files) fd.append('files', f);
+    fd.append('scheduled_time', timeInput.value);
+
+    try {
+        App.showLoading('正在上传文件并设置定时任务...');
+        const resp = await fetch((window.BASE_URL || '') + '/api/schedule-upload', {
+            method: 'POST', body: fd
+        });
+        const data = await resp.json();
+        App.hideLoading();
+        if (data.error) {
+            App.alert(data.error, 'danger');
+            return;
+        }
+        App.alert(data.msg, 'success');
+        fileInput.value = '';
+        document.getElementById('sched-file-label').textContent = '未选择文件';
+        loadScheduledUploads();
+    } catch(e) {
+        App.hideLoading();
+        App.alert('定时设置失败: ' + e.message, 'danger');
+    }
+}
+
+async function loadScheduledUploads() {
+    const div = document.getElementById('scheduled-uploads-list');
+    try {
+        const resp = await fetch((window.BASE_URL || '') + '/api/scheduled-uploads');
+        const tasks = await resp.json();
+        // 只显示pending的任务（已完成/取消的30分钟后不再显示）
+        const now = Date.now();
+        const visible = tasks.filter(t => {
+            if (t.status === 'pending') return true;
+            // 已完成/失败/取消：保留显示
+            return t.status === 'done' || t.status === 'error' || t.status === 'running';
+        });
+        if (!visible.length) {
+            div.style.display = 'none';
+            return;
+        }
+        let html = '<div class="small"><div class="fw-bold mb-1 d-flex justify-content-between align-items-center"><span><i class="bi bi-clock-history me-1 text-primary"></i>定时入单任务</span>'
+            + '<button class="btn btn-outline-secondary btn-sm py-0 px-1" style="font-size:0.7rem" onclick="clearScheduledHistory()"><i class="bi bi-trash3 me-1"></i>清除历史</button></div>';
+        visible.forEach(t => {
+            const statusMap = {
+                pending: '<span class="badge bg-primary">等待中</span>',
+                running: '<span class="badge bg-warning text-dark">执行中</span>',
+                done: '<span class="badge bg-success">已完成</span>',
+                error: '<span class="badge bg-danger">失败</span>',
+                cancelled: '<span class="badge bg-secondary">已取消</span>',
+            };
+            const statusBadge = statusMap[t.status] || t.status;
+            const fileNames = (t.file_names || []).slice(0, 3).join('、');
+            const moreLabel = t.file_count > 3 ? `等${t.file_count}个` : '';
+            const resultText = t.result ? `<span class="text-muted ms-1">${t.result}</span>` : '';
+            const cancelBtn = t.status === 'pending'
+                ? `<button class="btn btn-outline-danger btn-sm ms-auto" onclick="cancelScheduledUpload('${t.id}')" style="padding:0 6px;font-size:0.72rem;"><i class="bi bi-x"></i>取消</button>`
+                : '';
+            const detailBtn = (t.status === 'done' || t.status === 'error')
+                ? `<button class="btn btn-outline-primary btn-sm ms-auto" onclick="showSchedDetail('${t.id}')" style="padding:0 6px;font-size:0.72rem;"><i class="bi bi-list-ul me-1"></i>详情</button>`
+                : '';
+            // 无法自动处理的项目（需手动处理），用醒目警告展示
+            let unhandledHtml = '';
+            if (t.status === 'done' && t.unhandled && t.unhandled.length > 0) {
+                const items = t.unhandled.map(u => `<li style="margin-bottom:2px;">${u}</li>`).join('');
+                unhandledHtml = `<div class="mt-1 p-2 rounded" style="background:#fff3cd;border:1px solid #ffc107;font-size:0.8rem;">
+                    <div class="fw-bold mb-1" style="color:#856404;"><i class="bi bi-exclamation-triangle-fill me-1"></i>以下${t.unhandled.length}项需手动处理：</div>
+                    <ul class="mb-0 ps-3" style="color:#333;">${items}</ul>
+                </div>`;
+            }
+            html += `<div class="py-1 border-bottom">
+                <div class="d-flex align-items-center gap-2">
+                    ${statusBadge}
+                    <span class="badge bg-light text-dark">${t.time_display}</span>
+                    <span title="${(t.file_names||[]).join('&#10;')}">${fileNames}${moreLabel}</span>
+                    ${resultText}${cancelBtn}${detailBtn}
+                </div>
+                ${unhandledHtml}
+            </div>`;
+        });
+        html += '</div>';
+        div.innerHTML = html;
+        div.style.display = 'block';
+    } catch(e) {
+        div.style.display = 'none';
+    }
+}
+
+async function showSchedDetail(taskId) {
+    const body = document.getElementById('schedDetailBody');
+    body.innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-hourglass-split me-2"></i>加载中...</div>';
+    const modal = new bootstrap.Modal(document.getElementById('schedDetailModal'));
+    modal.show();
+    try {
+        const resp = await fetch((window.BASE_URL || '') + '/api/scheduled-upload-detail/' + taskId);
+        const d = await resp.json();
+        const typeMap = { new: '新单', modify: '修改', cancel: '取消', mixed_skip: '混装跳过', error: '失败' };
+        const typeBadge = { new: 'bg-success', modify: 'bg-primary', cancel: 'bg-danger', mixed_skip: 'bg-warning text-dark', error: 'bg-secondary' };
+
+        let html = `<div class="mb-2 d-flex align-items-center gap-2">
+            <span class="fw-bold">${escapeHtml(d.time_display || '')}</span>
+            ${d.done_time ? `<span class="text-muted small">完成于 ${escapeHtml(d.done_time)}</span>` : ''}
+            ${d.result ? `<span class="text-muted small ms-2">${escapeHtml(d.result)}</span>` : ''}
+        </div>`;
+
+        if (d.from_history) {
+            html += `<div class="alert alert-info py-1 px-2 small mb-2"><i class="bi bi-info-circle me-1"></i>以下明细从历史记录还原（按时间窗口匹配），货号可能不完整</div>`;
+        }
+        const details = d.details || [];
+        if (!details.length) {
+            html += '<div class="text-muted small py-3">暂无操作明细（该时段无历史记录）</div>';
+        } else {
+            // 按来源文件分组（旧任务用排期文件名分组，新任务用PO来源文件）
+            const byFile = {};
+            details.forEach(row => {
+                const key = row.src_file || row.po || '未知来源';
+                if (!byFile[key]) byFile[key] = [];
+                byFile[key].push(row);
+            });
+
+            Object.entries(byFile).forEach(([srcFile, rows]) => {
+                html += `<div class="mb-3">
+                    <div class="fw-bold small mb-1" style="color:#1e40af;">
+                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>${escapeHtml(srcFile)}
+                    </div>
+                    <table class="table table-sm table-bordered mb-0" style="font-size:0.8rem;">
+                        <thead style="background:#f0f4ff;">
+                            <tr>
+                                <th style="width:60px;">类型</th>
+                                <th>货号</th>
+                                <th>PO号</th>
+                                <th style="width:70px;">数量</th>
+                                <th>出货期</th>
+                                <th>写入排期</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+                rows.forEach(r => {
+                    const badge = typeBadge[r.type] || 'bg-secondary';
+                    const label = typeMap[r.type] || r.type;
+                    html += `<tr>
+                        <td><span class="badge ${badge}" style="font-size:0.72rem;">${escapeHtml(label)}</span></td>
+                        <td class="fw-bold">${escapeHtml(r.sku || '')}</td>
+                        <td class="text-muted">${escapeHtml(r.po || '')}</td>
+                        <td>${r.qty ? escapeHtml(String(r.qty)) + 'pcs' : ''}</td>
+                        <td>${escapeHtml(r.ship_date || '')}</td>
+                        <td class="text-muted" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sched_file || '')}">${escapeHtml(r.sched_file || '')}</td>
+                    </tr>`;
+                });
+                html += `</tbody></table></div>`;
+            });
+        }
+
+        // 需手动处理的项目
+        if (d.unhandled && d.unhandled.length > 0) {
+            const items = d.unhandled.map(u => `<li>${escapeHtml(u)}</li>`).join('');
+            html += `<div class="mt-2 p-2 rounded" style="background:#fff3cd;border:1px solid #ffc107;font-size:0.8rem;">
+                <div class="fw-bold mb-1" style="color:#856404;"><i class="bi bi-exclamation-triangle-fill me-1"></i>需手动处理（${d.unhandled.length}项）</div>
+                <ul class="mb-0 ps-3">${items}</ul>
+            </div>`;
+        }
+
+        body.innerHTML = html;
+    } catch(e) {
+        body.innerHTML = `<div class="text-danger small py-3">加载失败：${escapeHtml(String(e))}</div>`;
+    }
+}
+
+let _lockedRetryExpanded = false;
+
+async function loadLockedRetries() {
+    const panel = document.getElementById('locked-retry-panel');
+    if (!panel) return;
+    try {
+        const resp = await fetch((window.BASE_URL || '') + '/api/locked-retries');
+        const data = await resp.json();
+        const items = data.items || [];
+        if (!items.length) { panel.style.display = 'none'; return; }
+
+        // 按文件分组
+        const byFile = {};
+        const typeMap = {new: '新单', modify: '修改', cancel: '取消'};
+        items.forEach(it => {
+            const f = escapeHtml(it.locked_file || '未知文件');
+            if (!byFile[f]) byFile[f] = [];
+            byFile[f].push(it);
+        });
+
+        const fileRows = Object.entries(byFile).map(([file, its]) => {
+            // 按PO号分组
+            const byPo = {};
+            its.forEach(it => {
+                const po = it.po || '未知PO';
+                if (!byPo[po]) byPo[po] = [];
+                byPo[po].push(it);
+            });
+            const poRows = Object.entries(byPo).map(([po, poItems]) => {
+                const skus = poItems.map(it => {
+                    const type = typeMap[it.act_type] || it.act_type || '新单';
+                    return `<span class="badge me-1" style="background:#e9ecef;color:#495057;font-weight:normal;">[${escapeHtml(type)}] ${escapeHtml(it.sku||'-')}</span>`;
+                }).join('');
+                return `<div class="mb-1 ps-2" style="border-left:2px solid #ffc107;"><span class="text-muted me-2" style="font-size:0.78rem;">PO ${escapeHtml(po)}</span>${skus}</div>`;
+            }).join('');
+            return `<div class="mb-2"><div class="fw-semibold mb-1" style="font-size:0.78rem;color:#6c757d;">${file}</div>${poRows}</div>`;
+        }).join('<hr class="my-1">');
+
+        const detailId = 'locked-retry-detail';
+        const chevron = _lockedRetryExpanded ? 'bi-chevron-up' : 'bi-chevron-down';
+        panel.innerHTML = `<div class="p-2 rounded" style="background:#fff8e1;border:1px solid #ffc107;font-size:0.82rem;">
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-hourglass-split text-warning"></i>
+                <span class="fw-bold" style="color:#856404;">排期被占用，等待重试（${items.length}项）</span>
+                <button class="btn btn-sm btn-outline-secondary ms-auto" style="padding:1px 7px;font-size:0.75rem;" onclick="lockedRetryNow(this)" title="立即重试一次">
+                    <i class="bi bi-arrow-clockwise"></i> 立即重试
+                </button>
+                <button class="btn btn-sm btn-outline-danger" style="padding:1px 7px;font-size:0.75rem;" onclick="lockedRetryClear()" title="清除全部，不再自动重试">
+                    <i class="bi bi-x-lg"></i> 清除
+                </button>
+                <button class="btn btn-sm btn-link p-0" style="color:#856404;" onclick="_lockedRetryExpanded=!_lockedRetryExpanded;loadLockedRetries();">
+                    <i class="bi ${chevron}"></i>
+                </button>
+            </div>
+            ${_lockedRetryExpanded ? `<div id="${detailId}" class="mt-2 pt-2 border-top">${fileRows}</div>` : ''}
+        </div>`;
+        panel.style.display = 'block';
+    } catch(e) { panel.style.display = 'none'; }
+}
+
+async function lockedRetryNow(btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 重试中...';
+    try {
+        const resp = await fetch((window.BASE_URL || '') + '/api/locked-retries/retry-now', {method:'POST'});
+        const data = await resp.json();
+        setTimeout(loadLockedRetries, 3000);
+    } catch(e) {}
+    setTimeout(() => { btn.disabled = false; loadLockedRetries(); }, 4000);
+}
+
+async function lockedRetryClear() {
+    if (!confirm('确定清除所有待重试任务吗？已被锁的货号将不再自动重试。')) return;
+    try {
+        await fetch((window.BASE_URL || '') + '/api/locked-retries/clear', {method:'POST'});
+        loadLockedRetries();
+    } catch(e) {}
+}
+
+async function cancelScheduledUpload(taskId) {
+    try {
+        const resp = await fetch((window.BASE_URL || '') + '/api/cancel-scheduled-upload', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: taskId})
+        });
+        const data = await resp.json();
+        if (data.error) {
+            App.alert(data.error, 'danger');
+        } else {
+            App.alert('已取消定时任务', 'info');
+        }
+        loadScheduledUploads();
+    } catch(e) {
+        App.alert('取消失败: ' + e.message, 'danger');
+    }
+}
+
+async function clearScheduledHistory() {
+    if (!confirm('确定清除所有已完成的定时任务记录？')) return;
+    try {
+        const resp = await fetch((window.BASE_URL || '') + '/api/clear-scheduled-history', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}
+        });
+        const data = await resp.json();
+        App.alert(`已清除 ${data.cleared} 条历史记录`, 'success');
+        loadScheduledUploads();
+    } catch(e) {
+        App.alert('清除失败: ' + e.message, 'danger');
+    }
+}
+
+// =================== 总排期入单 ===================
+async function masterScheduleUpload() {
+    const input = document.getElementById('master-files');
+    if (!input.files.length) { App.alert('请先选择Excel文件', 'warning'); return; }
+    const fd = new FormData();
+    for (const f of input.files) fd.append('files', f);
+    document.getElementById('master-result').textContent = '写入中...';
+    try {
+        const resp = await fetch((window.BASE_URL||'')+'/api/master-schedule-upload', {method:'POST', body:fd});
+        const data = await resp.json();
+        if (data.ok) {
+            let html = `<div class="fw-bold text-success mb-2">${data.msg}</div>`;
+            if (data.mod_details && data.mod_details.length) {
+                html += `<div class="small mb-1"><b>修改单明细（已写入总排期）：</b></div><ul class="small mb-2">`;
+                data.mod_details.forEach(d => html += `<li>${d}</li>`);
+                html += `</ul>`;
+            }
+            if (data.new_details && data.new_details.length) {
+                html += `<div class="small mb-1"><b>新单明细（需复制粘贴）：</b></div><ul class="small mb-2">`;
+                data.new_details.forEach(d => html += `<li>${d}</li>`);
+                html += `</ul>`;
+            }
+            if (data.export_file) {
+                html += `<a href="${(window.BASE_URL||'')}/api/master-export-download/${data.export_file}" class="btn btn-primary mt-1"><i class="bi bi-download me-1"></i>下载新单Excel</a>`;
+            }
+            document.getElementById('master-result').innerHTML = html;
+            input.value = '';
+            if (data.errors && data.errors.length) App.alert('部分文件失败: '+data.errors.join('; '), 'warning');
+        } else {
+            document.getElementById('master-result').innerHTML = '';
+            App.alert(data.error, 'danger');
+        }
+    } catch(e) {
+        document.getElementById('master-result').innerHTML = '';
+        App.alert('生成失败: '+e.message, 'danger');
+    }
+}
+function masterScheduleDownload() {
+    window.open((window.BASE_URL||'')+'/api/master-schedule-download', '_blank');
+}
+async function masterScheduleClear() {
+    if (!confirm('确定清空总排期？所有已写入数据将被删除。')) return;
+    try {
+        await fetch((window.BASE_URL||'')+'/api/master-schedule-clear', {method:'POST', headers:{'Content-Type':'application/json'}});
+        App.alert('总排期已清空', 'success');
+        document.getElementById('master-result').textContent = '';
+    } catch(e) { App.alert('清空失败: '+e.message, 'danger'); }
+}
+
+// 每30秒刷新定时任务列表
+setInterval(loadScheduledUploads, 30000);
+setInterval(loadLockedRetries, 30000);
+loadLockedRetries();
 
 // ========== 上传 ==========
 async function batchUpload() {
     const files = document.getElementById('pdf-input').files;
     if (!files.length) return;
-    App.showLoading(`正在解析 ${files.length} 个PDF并匹配排期...`);
+    const fileArr = Array.from(files);
+    const hasExcel = fileArr.some(f => f.name.match(/\.xlsx?$/i));
+    const hasPdf = fileArr.some(f => f.name.match(/\.pdf$/i));
+    const typeLabel = hasExcel && !hasPdf ? 'Excel' : hasPdf && !hasExcel ? 'PDF' : '文件';
+    App.showLoading(`正在上传 ${files.length} 个${typeLabel}...`, {
+        progress: true, sub: '后台异步处理，不会超时断连'
+    });
+    App.setProgress(5, '上传文件...');
     try {
         const fd = new FormData();
         for (let f of files) fd.append('files', f);
-        const data = await App.api('/api/batch-upload', { method: 'POST', body: fd });
-        ORDERS = data.orders || [];
-        renderOrders();
-        // 有异常时刷新异常提醒面板
-        if (data.issues && data.issues.length > 0) {
-            loadIssues();
+        const upload = await App.api('/api/batch-upload', { method: 'POST', body: fd, timeout: 120000 });
+
+        // 队列模式（>20个文件）
+        if (upload.mode === 'queue') {
+            App.hideLoading();
+            document.getElementById('upload-card').style.display = 'none';
+            document.getElementById('queue-area').style.display = 'block';
+            document.getElementById('queue-total-label').textContent = `共${upload.total}个文件 / ${upload.n_batches}批`;
+            _startQueuePolling(upload.total);
+            return;
         }
+
+        if (!upload.async) {
+            _handleBatchResult(upload);
+            return;
+        }
+        // 普通异步模式（≤20个文件）
+        App.setProgress(10, `已上传 ${upload.file_count} 个文件，后台处理中...`);
+        const data = await _pollBatchResult(upload.file_count);
+        _handleBatchResult(data);
     } catch (e) {
         App.alert('批量解析失败: ' + e.message, 'danger');
     } finally { App.hideLoading(); }
+}
+
+// ========== 队列模式轮询 ==========
+let _queuePollTimer = null;
+
+function _startQueuePolling(totalFiles) {
+    if (_queuePollTimer) clearInterval(_queuePollTimer);
+    _queuePollTimer = setInterval(async () => {
+        try {
+            const resp = await fetch((window.BASE_URL || '') + '/api/queue/status');
+            const s = await resp.json();
+
+            // 更新进度条
+            const pct = s.total_files > 0 ? Math.round((s.done_files + s.failed_files) / s.total_files * 100) : 0;
+            document.getElementById('queue-progress-bar').style.width = pct + '%';
+            document.getElementById('queue-done').textContent = s.done_files;
+            document.getElementById('queue-failed').textContent = s.failed_files;
+            document.getElementById('queue-confirm').textContent = s.needs_confirm_count;
+            const batchLabel = s.n_batches > 0
+                ? `第${s.batch_idx + 1}批 / 共${s.n_batches}批`
+                : '准备中...';
+            document.getElementById('queue-batch-badge').textContent = batchLabel;
+            if (s.current_batch_files && s.current_batch_files.length) {
+                document.getElementById('queue-current-files').textContent =
+                    '当前批: ' + s.current_batch_files.slice(0, 5).join('、') +
+                    (s.current_batch_files.length > 5 ? ` 等${s.current_batch_files.length}个` : '');
+            }
+
+            // 处理完成
+            if (s.mode === 'done' || s.mode === 'error') {
+                clearInterval(_queuePollTimer);
+                _queuePollTimer = null;
+                document.getElementById('queue-progress-bar').classList.remove('progress-bar-animated');
+                if (s.mode === 'error' && s.error) {
+                    document.getElementById('queue-error-msg').style.display = '';
+                    document.getElementById('queue-error-msg').textContent = '队列错误: ' + s.error;
+                }
+                // 取完整结果，显示汇总
+                const result = await fetch((window.BASE_URL || '') + '/api/queue/result').then(r => r.json());
+                _showQueueDone(result, totalFiles);
+            }
+        } catch(e) {
+            console.error('[队列轮询] 异常:', e);
+        }
+    }, 2000);
+}
+
+function _showQueueDone(result, totalFiles) {
+    document.getElementById('queue-area').style.display = 'none';
+    document.getElementById('done-area').style.display = 'block';
+
+    const results = result.results || [];
+    const failed = result.failed || [];
+    const needsConfirm = result.needs_confirm || [];
+    FAILED = failed;
+
+    let summary = '';
+    if (results.length > 0 && failed.length === 0) {
+        summary += `<p class="text-success fw-bold">${results.length} 个文件处理成功并已保存到Z盘</p>`;
+    } else if (results.length > 0 && failed.length > 0) {
+        summary += `<p class="text-warning fw-bold">${results.length} 个文件成功，${failed.length} 个文件失败</p>`;
+    } else {
+        summary += `<p class="text-danger fw-bold">${failed.length} 个文件失败</p>`;
+    }
+
+    // 成功文件列表
+    results.forEach(r => {
+        const msg = r.msg || '';
+        const warnMatch = msg.match(/\[空字段:\s*([^\]]+)\]/g);
+        if (warnMatch) {
+            const displayMsg = msg.replace(/\s*\[空字段:[^\]]+\]/g, '');
+            summary += `<div class="small"><i class="bi bi-check2 text-success me-1"></i>${escapeHtml(r.file)}: ${escapeHtml(displayMsg)}</div>`;
+            warnMatch.forEach(w => {
+                const fields = w.replace('[空字段:', '').replace(']', '').trim();
+                summary += `<div class="small text-danger ms-3"><i class="bi bi-exclamation-triangle-fill me-1"></i><b>未填字段：</b>${escapeHtml(fields)}</div>`;
+            });
+        } else {
+            summary += `<div class="small text-muted"><i class="bi bi-check2 text-success me-1"></i>${escapeHtml(r.file)}: ${escapeHtml(msg)}</div>`;
+        }
+    });
+
+    // 失败文件
+    if (failed.length > 0) {
+        summary += `<div class="alert alert-danger py-2 px-3 mt-2 mb-1" style="font-size:0.82rem;">`;
+        summary += `<b>失败文件（${failed.length}个）：</b><br>`;
+        failed.forEach(f => {
+            summary += `<div>${escapeHtml(f.fname || f.file)}: ${escapeHtml(f.reason || f.msg || '')}</div>`;
+        });
+        summary += `</div>`;
+    }
+
+    // 需要人工确认的混装货号
+    if (needsConfirm.length > 0) {
+        summary += `<div class="alert alert-warning py-2 px-3 mt-2" style="font-size:0.82rem;">
+            <i class="bi bi-exclamation-circle-fill me-1"></i>
+            <b>以下 ${needsConfirm.length} 项检测到同line多货号（混装），已跳过自动入单，请手动处理：</b>
+            <ul class="mb-0 mt-1">`;
+        needsConfirm.forEach(item => {
+            summary += `<li><b>${escapeHtml(item.sku)}</b> — PO ${escapeHtml(item.po)} — ${escapeHtml(item.filename)}</li>`;
+        });
+        summary += `</ul></div>`;
+    }
+
+    document.getElementById('done-summary').innerHTML = summary;
+
+    // 被锁等待重试面板
+    const lockedItems = result.all_locked || [];
+    if (lockedItems.length > 0) {
+        const typeMap = {'new': '新单', 'modify': '修改', 'cancel': '取消'};
+        const rows = lockedItems.map(it => {
+            const sku  = escapeHtml(it.sku);
+            const po   = escapeHtml(it.po || '-');
+            const file = escapeHtml(it.file);
+            const type = escapeHtml(typeMap[it.act_type] || it.act_type || '新单');
+            return `<li style="margin-bottom:2px;">[${type}] ${sku} · PO ${po} · ${file}</li>`;
+        }).join('');
+        const retryMin = (window._sysConfig && window._sysConfig.retry_interval_min) || 5;
+        const panel = document.createElement('div');
+        panel.className = 'mt-2 p-2 rounded';
+        panel.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;font-size:0.82rem;';
+        panel.innerHTML = `
+            <div class="fw-bold mb-1" style="color:#856404;">
+                <i class="bi bi-arrow-repeat me-1"></i>
+                以下 ${lockedItems.length} 项排期被占用，已自动加入轮询队列（每 ${retryMin} 分钟重试一次）：
+            </div>
+            <ul class="mb-0 ps-3" style="color:#333;">${rows}</ul>
+            <div class="mt-1" style="color:#6c757d;font-size:0.78rem;">
+                可在"设置"中修改轮询间隔，或在"定时任务"页面查看重试状态
+            </div>`;
+        document.getElementById('done-summary').appendChild(panel);
+    }
+}
+
+// 轮询后台任务进度+结果
+function _pollBatchResult(fileCount) {
+    return new Promise((resolve, reject) => {
+        const phaseLabels = {
+            'parse': '解析文件', 'search': '搜索排期', 'done': '完成'
+        };
+        let _resultRetries = 0;  // batch-result获取失败重试计数
+        const _poll = setInterval(async () => {
+            try {
+                // 先查进度
+                const resp = await fetch((window.BASE_URL || '') + '/api/batch-progress');
+                const prog = await resp.json();
+                if (prog.phase === 'parse' && prog.total > 0) {
+                    const pct = 10 + Math.round((prog.done / prog.total) * 40);
+                    App.setProgress(Math.min(pct, 49), `${phaseLabels.parse} (${prog.done}/${prog.total})`);
+                } else if (prog.phase === 'search') {
+                    const pct = 50 + prog.done * 15;
+                    App.setProgress(Math.min(pct, 94), prog.current || '搜索排期...');
+                } else if (prog.phase === 'done' || (!prog.running && prog.done > 0)) {
+                    // 处理完成，取结果
+                    App.setProgress(95, '获取结果...');
+                    try {
+                        const rResp = await fetch((window.BASE_URL || '') + '/api/batch-result');
+                        const rData = await rResp.json();
+                        if (rData.status === 'done') {
+                            clearInterval(_poll);
+                            App.setProgress(100, '解析完成 ✓');
+                            await new Promise(r => setTimeout(r, 300));
+                            resolve(rData);
+                        } else if (rData.status === 'error') {
+                            clearInterval(_poll);
+                            reject(new Error(rData.error || '后台处理出错'));
+                        } else if (rData.status === 'running') {
+                            // 还在跑，继续轮询
+                        } else {
+                            // idle或其他异常状态，重试几次后报错
+                            _resultRetries++;
+                            if (_resultRetries >= 5) {
+                                clearInterval(_poll);
+                                reject(new Error('获取结果失败：后台任务状态异常，请刷新页面重试'));
+                            }
+                        }
+                    } catch(fetchErr) {
+                        // batch-result请求失败（500/网络错误），重试
+                        _resultRetries++;
+                        console.error('[batch-result] 请求失败:', fetchErr, `(重试${_resultRetries}/5)`);
+                        if (_resultRetries >= 5) {
+                            clearInterval(_poll);
+                            reject(new Error('获取结果失败：服务器错误，请刷新页面重试'));
+                        }
+                    }
+                }
+            } catch(e) {
+                // progress轮询网络错误，静默继续（服务器可能临时忙）
+            }
+        }, 800);
+        // 安全超时：30分钟
+        setTimeout(() => { clearInterval(_poll); reject(new Error('处理超时(30分钟)')); }, 1800000);
+    });
+}
+
+// 处理批量上传结果（统一入口）
+let _SKIPPED_LOCKED = [];  // 被占用跳过的文件名列表
+let _LOCKED_SKU_ITEMS = [];  // 被占用的SKU详细数据（供定时重试用）
+function _handleBatchResult(data) {
+    if (App._progressTimer) { clearInterval(App._progressTimer); App._progressTimer = null; }
+    ORDERS = data.orders || [];
+    _SKIPPED_LOCKED = data.skipped_locked || [];
+    _LOCKED_SKU_ITEMS = data.locked_sku_items || [];
+    App.hideLoading();
+    const _hasMixed = ORDERS.some(o => o.mixed_groups && o.mixed_groups.length > 0);
+    if (_hasMixed) {
+        showMixedGroupsConfirm().then(() => {
+            renderOrders();
+        });
+    } else {
+        renderOrders();
+    }
+    try { sessionStorage.setItem('_orders', JSON.stringify(ORDERS)); } catch(e) {}
+    if (data.issues && data.issues.length > 0) { loadIssues(); }
+}
+
+// ========== 同line多货号确认弹窗 ==========
+function showMixedGroupsConfirm() {
+    return new Promise(resolve => {
+        // 收集所有mixed_groups
+        const allGroups = [];
+        ORDERS.forEach((o, oi) => {
+            (o.mixed_groups || []).forEach((mg, gi) => {
+                allGroups.push({...mg, _orderIdx: oi, _groupIdx: gi,
+                    po_number: mg.po_number || o.po_number || '?',
+                    _accepted: true  // 默认接受
+                });
+            });
+        });
+        if (!allGroups.length) { resolve(); return; }
+
+        // 渲染分组列表
+        let html = '';
+        allGroups.forEach((g, idx) => {
+            const typeLabel = g.type === 'mec_split' ? 'MEC拆分' : '同Line拆分';
+            const compHtml = (g.components || []).map(c =>
+                `<span class="badge bg-primary bg-opacity-10 text-primary me-1 mb-1" style="font-size:0.78rem;">
+                    ${escapeHtml(c.sku)} <small>×${(c.qty||0).toLocaleString()}</small>
+                </span>`
+            ).join('');
+            html += `<div class="border rounded p-2 mb-2" id="mg-item-${idx}" style="background:#fffbeb;">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <input type="checkbox" class="form-check-input mg-check" data-idx="${idx}" checked>
+                    <span class="badge bg-warning text-dark" style="font-size:0.7rem;">${typeLabel}</span>
+                    <b style="font-size:0.85rem;">PO ${escapeHtml(g.po_number)}</b>
+                    <small class="text-muted">Line ${escapeHtml(g.line_no)}</small>
+                    ${g.customer_po ? `<small class="text-muted">客PO: ${escapeHtml(g.customer_po)}</small>` : ''}
+                </div>
+                <div class="ms-4">
+                    <small class="text-muted">父行: ${escapeHtml(g.parent_sku)}</small>
+                    <span class="mx-1">→</span>
+                    <small>拆分为:</small>
+                    <div class="mt-1">${compHtml}</div>
+                </div>
+            </div>`;
+        });
+        document.getElementById('mixed-groups-list').innerHTML = html;
+
+        const modal = new bootstrap.Modal(document.getElementById('mixedGroupModal'));
+        modal.show();
+
+        // 全部确认
+        document.getElementById('mixedConfirmAll').onclick = () => {
+            document.querySelectorAll('.mg-check').forEach(cb => { cb.checked = true; });
+            applyAndClose();
+        };
+        // 全部拒绝
+        document.getElementById('mixedRejectAll').onclick = () => {
+            document.querySelectorAll('.mg-check').forEach(cb => { cb.checked = false; });
+            applyAndClose();
+        };
+
+        function applyAndClose() {
+            // 读取每个checkbox状态
+            const rejected = new Set();
+            document.querySelectorAll('.mg-check').forEach(cb => {
+                const idx = parseInt(cb.dataset.idx);
+                if (!cb.checked) rejected.add(idx);
+            });
+            // 按order分组处理被拒绝的
+            const rejectedByOrder = {};
+            allGroups.forEach((g, idx) => {
+                if (rejected.has(idx)) {
+                    if (!rejectedByOrder[g._orderIdx]) rejectedByOrder[g._orderIdx] = [];
+                    rejectedByOrder[g._orderIdx].push(g);
+                }
+            });
+            // 移除被拒绝组对应的lines（needs_user_confirmation && line_no匹配）
+            for (const [oi, groups] of Object.entries(rejectedByOrder)) {
+                const o = ORDERS[parseInt(oi)];
+                const rejLineNos = new Set(groups.map(g => g.line_no));
+                // 从actions中移除对应line_no的mixed行
+                const removedActions = [];
+                o.actions = (o.actions || []).filter(a => {
+                    if (a.line && a.line.needs_user_confirmation) {
+                        const aln = String(a.line.line_no || '').trim();
+                        if (rejLineNos.has(aln)) {
+                            removedActions.push(a);
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+                // 也从lines中标记
+                (o.lines || []).forEach(l => {
+                    if (l.needs_user_confirmation) {
+                        const lln = String(l.line_no || '').trim();
+                        if (rejLineNos.has(lln)) l._rejected = true;
+                    }
+                });
+                // 保存被拒绝的信息供渲染"手动入单汇总"
+                o._rejected_mixed = (o._rejected_mixed || []).concat(
+                    removedActions.map(a => ({
+                        sku: a.line?.sku_spec || a.line?.sku || a.sku || '?',
+                        qty: a.line?.qty || 0,
+                        po_number: o.po_number || '',
+                        customer_po: a.line?.customer_po || '',
+                    }))
+                );
+            }
+            modal.hide();
+            resolve();
+        }
+
+        // 也允许用单独复选框 + 关闭按钮
+        document.getElementById('mixedGroupModal').addEventListener('hidden.bs.modal', () => {
+            resolve();
+        }, {once: true});
+    });
 }
 
 function renderOrders() {
@@ -581,7 +1473,7 @@ function renderOrders() {
         errGroups[cat].items.push(item);
     }
 
-    let nNew = 0, nMod = 0, nCan = 0, nErr = 0, nUnmatched = 0;
+    let nNew = 0, nMod = 0, nCan = 0, nErr = 0, nUnmatched = 0, nUnchanged = 0;
 
     ORDERS.forEach(o => {
         if (o.type === 'error') {
@@ -603,10 +1495,26 @@ function renderOrders() {
         if (unmatched.length > 0) {
             nUnmatched += unmatched.length;
             unmatched.forEach(a => {
-                addError('sku_not_found', 'SKU未匹配排期', 'bi-link-45deg',
-                    {filename: o.filename, sku: a.sku || a.line?.sku || '?',
-                     tip: `PO ${o.po_number || '?'} 的 SKU "${a.sku || a.line?.sku || ''}" 找不到对应排期文件，需手动录入`,
-                     qty: a.line?.qty || 0, po: o.po_number || ''});
+                const sku = a.sku || a.line?.sku || '?';
+                const qty = a.line?.qty || 0;
+                const po = o.po_number || '';
+                if (a._locked_file) {
+                    // A类：排期被占用
+                    addError('sku_locked', '排期被占用（可定时重入）', 'bi-lock-fill',
+                        {filename: o.filename, sku, po, qty,
+                         locked_file: a._locked_file,
+                         tip: `排期文件 "${escapeHtml(a._locked_file)}" 正被占用，货号 "${escapeHtml(sku)}" 可能在其中。文件释放后可自动入单。`});
+                } else if (a.manual_reason && a.manual_reason.includes('混装')) {
+                    // B类：混装拆分问题
+                    addError('mixed_rejected', '混装箱需手动处理', 'bi-boxes',
+                        {filename: o.filename, sku, po, qty,
+                         tip: a.manual_reason || '混装箱拆分被拒绝，需手动入单'});
+                } else {
+                    // C类：确实不存在
+                    addError('sku_not_found', '货号未匹配排期', 'bi-x-circle',
+                        {filename: o.filename, sku, po, qty,
+                         tip: a.manual_reason || `货号 "${escapeHtml(sku)}" 在所有可搜索排期文件中均未找到，需手动录入`});
+                }
             });
         }
 
@@ -629,6 +1537,8 @@ function renderOrders() {
             if (a.type === 'new') nNew++;
             else if (a.type === 'modify') nMod++;
             else if (a.type === 'cancel') nCan++;
+            else if (a.type === 'unchanged') nUnchanged++;
+            else if (a.type === 'mixed_skip') nMod++; // 混装跳过也计入修改统计
         });
         // 原本未匹配的new也计入统计（但标记警告）
         if (unmatched.length > 0 && matched.length > 0) {
@@ -650,6 +1560,7 @@ function renderOrders() {
         <span class="badge-stat new"><i class="bi bi-plus-circle"></i> 新增 ${nNew}</span>
         <span class="badge-stat mod"><i class="bi bi-pencil"></i> 修改 ${nMod}</span>
         <span class="badge-stat can"><i class="bi bi-x-circle"></i> 取消 ${nCan}</span>
+        ${nUnchanged ? `<span class="badge-stat" style="background:rgba(148,163,184,.1);color:#64748b;"><i class="bi bi-check-lg"></i> 无变化 ${nUnchanged}</span>` : ''}
         ${totalErr ? `<span class="badge-stat err"><i class="bi bi-exclamation-circle"></i> 异常 ${totalErr}</span>` : ''}
         <span class="text-muted small ms-auto">${ORDERS.length} 个PDF | ${totalOps} 项可处理</span>
     `;
@@ -660,8 +1571,10 @@ function renderOrders() {
         errPanel.style.display = 'block';
         document.getElementById('error-total').textContent = totalErr;
         let ehtml = '';
+        // 被占用文件提示横幅
+        // 旧的被占用横幅已移至 sku_locked 分类中展示
         for (const [cat, grp] of Object.entries(errGroups)) {
-            const colorMap = {parse_error:'danger', sku_not_found:'warning', po_not_found:'info'};
+            const colorMap = {parse_error:'danger', sku_locked:'warning', sku_not_found:'danger', mixed_rejected:'secondary', po_not_found:'info'};
             const color = colorMap[cat] || 'secondary';
             ehtml += `<div class="err-category mb-2">
                 <div class="d-flex align-items-center gap-2 mb-1" style="font-size:0.85rem;">
@@ -669,15 +1582,34 @@ function renderOrders() {
                     <span class="fw-bold text-${color}">${grp.title}</span>
                     <span class="badge bg-${color} bg-opacity-15 text-${color}">${grp.items.length}</span>
                 </div>`;
+            // 被占用面板：添加定时重试按钮
+            if (cat === 'sku_locked') {
+                const _defTime = new Date(Date.now() + 30*60000);
+                const _defHM = String(_defTime.getHours()).padStart(2,'0') + ':' + String(_defTime.getMinutes()).padStart(2,'0');
+                ehtml += `<div class="d-flex align-items-center gap-2 mb-2 p-2" style="background:rgba(245,158,11,.08);border-radius:8px;">
+                    <i class="bi bi-clock text-warning" style="font-size:0.85rem;"></i>
+                    <input type="time" id="locked-retry-time" class="form-control form-control-sm"
+                           style="width:110px;font-size:0.75rem;" value="${_defHM}">
+                    <button class="btn btn-warning btn-sm" onclick="scheduleLockedRetry()"
+                            style="font-size:0.72rem;white-space:nowrap;" id="btn-schedule-locked">
+                        <i class="bi bi-clock-history me-1"></i>定时重入
+                    </button>
+                    <button class="btn btn-outline-warning btn-sm" onclick="retryLockedNow()"
+                            style="font-size:0.72rem;white-space:nowrap;">
+                        <i class="bi bi-arrow-repeat me-1"></i>立即重试
+                    </button>
+                </div>`;
+            }
             grp.items.forEach(item => {
+                // #31 XSS修复：所有用户数据用escapeHtml处理
                 ehtml += `<div class="err-item">
                     <div class="d-flex justify-content-between align-items-start">
-                        <span class="fw-bold" style="font-size:0.78rem;">${item.filename}</span>
-                        ${item.sku ? `<span class="badge bg-secondary bg-opacity-10 text-secondary" style="font-size:0.68rem;">SKU: ${item.sku}</span>` : ''}
-                        ${item.po ? `<span class="badge bg-primary bg-opacity-10 text-primary" style="font-size:0.68rem;">PO: ${item.po}</span>` : ''}
+                        <span class="fw-bold" style="font-size:0.78rem;">${escapeHtml(item.filename)}</span>
+                        ${item.sku ? `<span class="badge bg-secondary bg-opacity-10 text-secondary" style="font-size:0.68rem;">SKU: ${escapeHtml(item.sku)}</span>` : ''}
+                        ${item.po ? `<span class="badge bg-primary bg-opacity-10 text-primary" style="font-size:0.68rem;">PO: ${escapeHtml(item.po)}</span>` : ''}
                     </div>
                     <div style="font-size:0.72rem;color:#64748b;line-height:1.5;margin-top:2px;">
-                        ${(item.tip || '').replace(/\n/g, '<br>')}
+                        ${escapeHtml(item.tip || '').replace(/\n/g, '<br>')}
                     </div>
                     ${item.qty ? `<small class="text-muted">数量: ${item.qty.toLocaleString()}pcs</small>` : ''}
                 </div>`;
@@ -689,31 +1621,100 @@ function renderOrders() {
         errPanel.style.display = 'none';
     }
 
+    // 渲染"手动入单汇总"面板（按PO分类，含原因说明）
+    // 收集所有需手动处理的item（3个来源）
+    const allManual = [];  // {po, sku, qty, reason, customer_po, filename}
+    ORDERS.forEach(o => {
+        const po = o.po_number || '未知PO';
+        const fn = o.filename || '';
+        // 来源1：混装箱被拒绝
+        (o._rejected_mixed || []).forEach(rm => {
+            allManual.push({po: rm.po_number || po, sku: rm.sku || '', qty: rm.qty || 0,
+                reason: '混装箱拆分被拒绝', customer_po: rm.customer_po || '', filename: fn});
+        });
+        // 来源2：action中schedule=null的新增（含MB前缀/特殊格式/未匹配）
+        (o.actions || []).forEach(a => {
+            if (a.type === 'new' && !a.schedule) {
+                const sku = a.sku || a.line?.sku || '?';
+                const qty = a.line?.qty || 0;
+                const reason = a.manual_reason || a.detail || '排期中无相同货号参考行';
+                allManual.push({po, sku, qty, reason, customer_po: a.line?.customer_po || '', filename: fn});
+            }
+        });
+        // 来源3：解析失败的PO（文件损坏/格式不支持等）
+        if (o.type === 'error') {
+            allManual.push({po: po || fn, sku: '(整单)', qty: 0,
+                reason: `解析失败: ${o.error || '未知错误'}`, customer_po: '', filename: fn});
+        }
+    });
+    // 按PO分组
+    const manualByPO = {};
+    allManual.forEach(m => {
+        if (!manualByPO[m.po]) manualByPO[m.po] = [];
+        manualByPO[m.po].push(m);
+    });
+    const manualPanel = document.getElementById('manual-summary-panel');
+    if (manualPanel) {
+        if (allManual.length > 0) {
+            manualPanel.style.display = 'block';
+            document.getElementById('manual-summary-count').textContent = allManual.length;
+            document.getElementById('manual-done-progress').textContent = `已完成 0/${allManual.length}`;
+            let mhtml = '';
+            for (const [po, items] of Object.entries(manualByPO)) {
+                mhtml += `<div class="mb-2">
+                    <div class="d-flex align-items-center gap-2 mb-1" style="font-size:0.82rem;">
+                        <span class="badge bg-primary bg-opacity-15 text-primary">PO: ${escapeHtml(po)}</span>
+                        <span class="badge bg-secondary bg-opacity-10 text-secondary">${items.length}项</span>
+                        <small class="text-muted">${escapeHtml(items[0].filename)}</small>
+                    </div>`;
+                items.forEach(item => {
+                    mhtml += `<div class="manual-item d-flex align-items-center gap-2 py-1 ps-3 border-bottom" style="font-size:0.8rem;transition:opacity 0.2s,text-decoration 0.2s;">
+                        <input type="checkbox" class="form-check-input manual-done-check" onchange="updateManualDoneProgress()" style="min-width:16px;min-height:16px;cursor:pointer;">
+                        <b>${escapeHtml(item.sku)}</b>
+                        ${item.qty ? `<small>${item.qty.toLocaleString()}pcs</small>` : ''}
+                        ${item.customer_po ? `<small class="text-muted">客PO: ${escapeHtml(item.customer_po)}</small>` : ''}
+                        <small class="text-danger">${escapeHtml(item.reason)}</small>
+                    </div>`;
+                });
+                mhtml += '</div>';
+            }
+            document.getElementById('manual-summary-list').innerHTML = mhtml;
+        } else {
+            manualPanel.style.display = 'none';
+        }
+    }
+
     // 渲染可处理订单
     let html = '';
     goodOrders.forEach((o, i) => {
-        const typeCls = o.type === 'cancel' ? 'can' : o.type === 'modify' ? 'mod' : 'new';
-        const typeLabel = o.type === 'cancel' ? '取消' : o.type === 'modify' ? '修改' : '新单';
         const actions = o.actions || [];
         const warnings = o.warnings || [];
         const actCounts = {};
         actions.forEach(a => { actCounts[a.type] = (actCounts[a.type] || 0) + 1; });
+        let typeCls, typeLabel;
+        if (o.type === 'cancel') { typeCls = 'can'; typeLabel = '取消'; }
+        else if (o.type === 'modify') { typeCls = 'mod'; typeLabel = '修改'; }
+        else { typeCls = 'new'; typeLabel = '新单'; }
         let actSummary = [];
         if (actCounts.new) actSummary.push(`新增${actCounts.new}`);
         if (actCounts.modify) actSummary.push(`修改${actCounts.modify}`);
         if (actCounts.cancel) actSummary.push(`取消${actCounts.cancel}`);
+        if (actCounts.unchanged) actSummary.push(`无变化${actCounts.unchanged}`);
 
         const unmatchedSkus = actions.filter(a => a.type === 'new' && !a.schedule);
         const hasWarnings = warnings.length > 0 || unmatchedSkus.length > 0;
 
-        html += `<div class="order-card ${typeCls}">
+        html += `<div class="order-card ${typeCls}" data-order-idx="${i}">
             <div class="d-flex align-items-center gap-2 mb-1">
                 <span class="type-dot ${typeCls}"></span>
                 <span class="type-label ${typeCls}">${typeLabel}</span>
                 <b>PO ${o.po_number || '?'}</b>
                 <small class="text-muted">${o.customer || ''}</small>
                 ${hasWarnings ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;"><i class="bi bi-exclamation-triangle"></i> 有异常</span>' : ''}
-                <small class="ms-auto text-muted">${o.filename}</small>
+                <span class="ms-auto d-flex align-items-center gap-2">
+                    <small class="order-done-status" style="font-size:0.72rem;color:#22c55e;display:none;"><i class="bi bi-check-circle-fill me-1"></i>已全部确认</small>
+                    <small class="text-muted">${o.filename}</small>
+                </span>
             </div>
             <div class="d-flex gap-3 small text-muted">
                 <span><i class="bi bi-calendar3"></i> ${o.ship_date || ''}</span>
@@ -726,13 +1727,25 @@ function renderOrders() {
                 if (a.type === 'new' && a.line) {
                     const ln = a.line;
                     const s = a.schedule;
+                    // MEC拆分失败提示
                     let mixedHtml = '';
-                    if (ln.is_mixed_carton && ln.mixed_components && ln.mixed_components.length) {
+                    if (ln.mec_split_failed) {
+                        mixedHtml = `<div class="alert alert-danger py-1 px-2 mt-1 mb-0" style="font-size:0.8rem;">
+                            <i class="bi bi-exclamation-triangle me-1"></i><b>${ln.mec_fail_reason || 'MEC货号拆分失败'}</b>，需手动录入
+                        </div>`;
+                    }
+                    // 混装箱组件提示（已拆分成功）
+                    else if (ln.is_mixed_carton && ln.mixed_parent_sku) {
+                        mixedHtml = `<div class="mixed-carton-tip">
+                            <i class="bi bi-boxes me-1"></i><b>混装箱组件</b>：${ln.sku} = <b>${(ln.qty||0).toLocaleString()}pcs</b>
+                            <span class="text-muted ms-1">（展架数: ${ln.carton_count || ln.mixed_qty_original || 0}箱）</span>
+                        </div>`;
+                    }
+                    else if (ln.is_mixed_carton && ln.mixed_components && ln.mixed_components.length) {
                         const parts = ln.mixed_components.map(c => `${c.sku}×${c.qty}`).join(' + ');
                         mixedHtml = `<div class="mixed-carton-tip">
                             <i class="bi bi-boxes me-1"></i><b>混装箱</b>：${parts} = <b>${(ln.qty||0).toLocaleString()}pcs</b>
                             <span class="text-muted ms-1">（PDF原始箱数: ${ln.mixed_qty_original || 0}）</span>
-                            <span class="badge bg-warning text-dark ms-2" style="font-size:0.65rem;">请确认数量正确</span>
                         </div>`;
                     }
                     preview = `<div class="preview-row">
@@ -740,33 +1753,109 @@ function renderOrders() {
                         <span class="pv-tag">数量</span>${(ln.qty||0).toLocaleString()}
                         ${ln.price ? `<span class="pv-tag">单价</span>$${ln.price}` : ''}
                         ${ln.customer_po ? `<span class="pv-tag">客PO</span>${ln.customer_po}` : ''}
-                        ${s ? `<span class="pv-dest">${s.sheet} 行${s.ref}</span>` : ''}
+                        ${s && s.sheet ? `<span class="pv-dest">${s.sheet}${s.ref ? ' 行'+s.ref : ''}</span>` : ''}
                     </div>${mixedHtml}`;
                 } else if (a.type === 'modify' && a.changes) {
-                    const parts = Object.entries(a.changes).map(([col, val]) => {
-                        const old = a.record?.data?.[col] || '?';
-                        const colName = {I:'数量',Y:'单价',M:'出货',E:'客PO'}[col] || col;
-                        return `<span class="pv-tag">${colName}</span><s class="text-muted">${old}</s> → <b class="text-danger">${val}</b>`;
-                    }).join(' ');
-                    preview = `<div class="preview-row">${parts}
+                    function _colFieldName(col) {
+                        // 优先用后端检测的col_map精确映射
+                        const cm = a.record?.col_map || {};
+                        if (cm.ship_date === col) return '出货日期';
+                        if (cm.price === col) return '单价USD';
+                        if (cm.qty === col) return 'PO数量';
+                        if (cm.customer_po === col) return '客户PO';
+                        if (cm.item === col) return '货号';
+                        // 硬编码兜底
+                        if ('IJKL'.includes(col)) return 'PO数量';
+                        if ('MNOP'.includes(col)) return '出货日期';
+                        if (a.item_col && col === a.item_col) return '货号';
+                        if ('DE'.includes(col)) return 'PO号';
+                        if (col === 'F') return 'SKU';
+                        if (col === 'G') return '货号';
+                        const n = col.length === 1 ? col.charCodeAt(0)-64 : 26+(col.charCodeAt(1)-64);
+                        if (n >= 18 && n <= 32) return '单价USD';
+                        return col;
+                    }
+                    const skipCols = new Set(['note_col','note_old','note_new','note_new_lines','note_item_num']);
+                    const parts = Object.entries(a.changes)
+                        .filter(([col]) => !skipCols.has(col))
+                        .map(([col, val]) => {
+                            const oldV = (a.old_vals && a.old_vals[col] !== undefined)
+                                ? a.old_vals[col]
+                                : (a.record?.data?.[col] ?? '?');
+                            const fname = _colFieldName(col);
+                            return `<span class="pv-tag">${fname}</span><s class="text-muted small">${oldV}</s>→<b class="text-danger">${val}</b>`;
+                        }).join(' ');
+                    // 备注变化提示
+                    let notePart = '';
+                    if (a.note_changed) {
+                        notePart = `<div class="small mt-1" style="font-size:0.78rem;color:#e67e22;"><i class="bi bi-pencil-fill me-1"></i>备注有变化 → 执行后绿色标记，请核实排期备注列</div>`;
+                        if (a.pdf_note) {
+                            const shortNote = a.pdf_note.length > 120 ? a.pdf_note.slice(0,120)+'...' : a.pdf_note;
+                            notePart += `<div class="small text-muted mt-1" style="font-size:0.72rem;white-space:pre-line;max-height:60px;overflow:auto;background:#f8f9fa;padding:2px 6px;border-radius:3px;">PDF备注: ${shortNote}</div>`;
+                        }
+                    }
+                    preview = `<div class="preview-row">${parts || '(无字段变更)'}
                         <span class="pv-dest">${a.record?.sheet || ''} 行${a.record?.row || ''}</span>
-                    </div>`;
+                    </div>${notePart}`;
                 } else if (a.type === 'cancel' && a.record) {
                     preview = `<div class="preview-row">
                         <span class="pv-tag">行${a.record.row}</span>${a.sku || ''}
                         → 移至取消订单Sheet
                         <span class="pv-dest">${a.record.sheet || ''}</span>
                     </div>`;
+                } else if (a.type === 'mixed_skip') {
+                    preview = `<div class="preview-row" style="color:#9333ea;">
+                        <span class="pv-tag" style="background:#f3e8ff;color:#7c3aed;">混装跳过</span>${a.sku || ''}
+                        <span class="pv-dest">${a.record?.sheet || ''} 行${a.record?.row || ''}</span>
+                    </div>
+                    <div class="small mt-1" style="font-size:0.78rem;color:#9333ea;"><i class="bi bi-exclamation-triangle-fill me-1"></i>同line混装组件，系统不自动修改，请手动处理</div>`;
+                } else if (a.type === 'unchanged' && a.record) {
+                    preview = `<div class="preview-row" style="opacity:0.55;">
+                        <span class="pv-tag" style="background:#e2e8f0;color:#64748b;">已存在</span>${a.sku || ''}
+                        <span class="pv-dest">${a.record.sheet || ''} 行${a.record.row || ''}</span>
+                    </div>`;
                 }
-                return `<div class="action-item ${a.type}${noSched ? ' unmatched' : ''}">
-                    <span class="act-dot ${a.type}"></span>${a.detail}
-                    ${noSched ? '<span class="badge bg-danger bg-opacity-10 text-danger ms-2" style="font-size:0.65rem;"><i class="bi bi-link-45deg"></i> 未匹配排期</span>' : ''}
-                    ${preview}
+                const warnHtml = noSched
+                    ? `<div class="alert alert-danger py-1 px-2 mt-1 mb-0" style="font-size:0.8rem;border-radius:4px;">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        <b>找不到对应排期！</b> 货号 <code>${a.sku || a.line?.sku || '?'}</code> 未在任何排期文件中匹配，需手动录入。
+                       </div>` : '';
+                if (a.type === 'unchanged') {
+                    return `<div class="action-item unchanged" style="opacity:0.5;border-left:2px solid #cbd5e1;">
+                        <div class="d-flex align-items-start gap-2">
+                            <div class="flex-fill">
+                                <span class="act-dot" style="background:#94a3b8;"></span>${a.detail}
+                                ${preview}
+                            </div>
+                        </div>
+                    </div>`;
+                }
+                return `<div class="action-item ${a.type}${noSched ? ' unmatched' : ''}" style="transition:opacity 0.2s;">
+                    <div class="d-flex align-items-start gap-2">
+                        <input type="checkbox" class="form-check-input order-done-check" onchange="updateOrderDoneProgress(this)" style="min-width:16px;min-height:16px;margin-top:3px;cursor:pointer;">
+                        <div class="flex-fill">
+                            <span class="act-dot ${a.type}"></span>${a.detail}
+                            ${warnHtml}
+                            ${preview}
+                        </div>
+                    </div>
                 </div>`;
             }).join('')}</div>` : ''}
             ${warnings.length ? `<div class="inline-warnings mt-2">${warnings.map(w =>
                 `<div class="inline-warning ${w.color}"><i class="bi ${w.icon} me-1"></i>${w.title}</div>`
             ).join('')}</div>` : ''}
+            ${(() => {
+                const newActs = actions.filter(a => a.type === 'new');
+                const modNoteActs = actions.filter(a => a.type === 'modify' && a.note_changed);
+                let noteHtml = '';
+                if (newActs.length > 0) {
+                    noteHtml += '<div class="alert alert-success py-1 px-2 mt-2 mb-0" style="font-size:0.78rem;border-radius:4px;"><i class="bi bi-check-circle me-1"></i><b>新单备注：</b>PDF完整备注内容将自动写入排期备注列。</div>';
+                }
+                if (modNoteActs.length > 0) {
+                    noteHtml += `<div class="alert alert-warning py-1 px-2 mt-1 mb-0" style="font-size:0.78rem;border-radius:4px;"><i class="bi bi-exclamation-circle me-1"></i><b>修改单备注：</b>${modNoteActs.length}个货号备注有变化，执行后绿色标记提醒，原备注保留不替换。</div>`;
+                }
+                return noteHtml;
+            })()}
         </div>`;
     });
     document.getElementById('orders-list').innerHTML = html || '<div class="text-center py-3 text-muted">没有可自动处理的订单</div>';
@@ -795,7 +1884,8 @@ async function batchExecute() {
     try {
         const data = await App.api('/api/batch-execute', {
             method: 'POST',
-            body: { orders: ORDERS.filter(o => o.type !== 'error') }
+            body: { orders: ORDERS.filter(o => o.type !== 'error') },
+            timeout: 600000  // 10分钟，排期文件多时需要更长时间
         });
 
         document.getElementById('results-area').style.display = 'none';
@@ -803,16 +1893,27 @@ async function batchExecute() {
 
         const results = data.results || [];
         const failed = data.failed || [];
+        const skipped = data.skipped || [];
         FAILED = failed;
 
-        let summary = `<p class="text-success fw-bold">${results.length} 个文件处理成功并已保存到Z盘</p>`;
+        let summary = '';
+        if (results.length > 0 && failed.length === 0) {
+            summary += `<p class="text-success fw-bold">${results.length} 个文件处理成功并已保存到Z盘</p>`;
+        } else if (results.length > 0 && failed.length > 0) {
+            summary += `<p class="text-warning fw-bold">${results.length} 个文件成功，${failed.length} 个文件保存失败</p>`;
+        } else if (failed.length > 0) {
+            const firstReason = (failed[0] && failed[0].reason) || '未知原因';
+            summary += `<p class="text-danger fw-bold">${failed.length} 个文件未能保存：${escapeHtml(firstReason)}</p>`;
+        } else {
+            summary += `<p class="text-success fw-bold">处理完成</p>`;
+        }
+
         results.forEach(r => {
             const msg = r.msg || '';
-            // 检测空字段警告（格式：[空字段: xxx, yyy]）
             const warnMatch = msg.match(/\[空字段:\s*([^\]]+)\]/g);
             if (warnMatch) {
-                const cleanMsg = msg.replace(/\s*\[空字段:[^\]]+\]/g, '');
-                summary += `<div class="small"><i class="bi bi-check2 text-success me-1"></i>${r.file}: ${cleanMsg}</div>`;
+                const displayMsg = msg.replace(/\s*\[空字段:[^\]]+\]/g, '');
+                summary += `<div class="small"><i class="bi bi-check2 text-success me-1"></i>${r.file}: ${displayMsg}</div>`;
                 warnMatch.forEach(w => {
                     const fields = w.replace('[空字段:', '').replace(']', '').trim();
                     summary += `<div class="small text-danger ms-3"><i class="bi bi-exclamation-triangle-fill me-1"></i><b>未填字段：</b>${fields}</div>`;
@@ -821,33 +1922,206 @@ async function batchExecute() {
                 summary += `<div class="small text-muted"><i class="bi bi-check2 text-success me-1"></i>${r.file}: ${msg}</div>`;
             }
         });
+        // 备注提醒（分类显示：新单已写入 / 修改单绿色标记）
+        const allNoteWarnings = [];
+        results.forEach(r => {
+            if (r.note_warnings && r.note_warnings.length > 0) {
+                r.note_warnings.forEach(nw => allNoteWarnings.push(nw));
+            }
+        });
+        const newNotes = allNoteWarnings.filter(n => n.type === 'new');
+        const modNotes = allNoteWarnings.filter(n => n.type === 'modify');
+        if (newNotes.length > 0) {
+            summary += `<div class="alert alert-success py-1 px-2 mt-2 mb-1" style="font-size:0.82rem;border-radius:4px;">
+                <i class="bi bi-check-circle-fill me-1"></i><b>新单备注（${newNotes.length}个）：</b>PDF完整备注已写入排期备注列
+                <div class="small text-muted mt-1">${newNotes.map(n => n.sku).join('、')}</div>
+            </div>`;
+        }
+        if (modNotes.length > 0) {
+            summary += `<div class="alert alert-warning py-1 px-2 mt-1 mb-1" style="font-size:0.82rem;border-radius:4px;">
+                <i class="bi bi-exclamation-circle-fill me-1"></i><b>修改单备注变化（${modNotes.length}个）：</b>已绿色标记，原备注保留未替换，请核实
+                <div class="small mt-1">${modNotes.map(n => {
+                    let s = `<div class="mb-1"><b>${n.sku}</b>（${n.sheet} 行${n.row}）`;
+                    if (n.pdf_note) {
+                        const short = n.pdf_note.length > 100 ? n.pdf_note.slice(0,100)+'...' : n.pdf_note;
+                        s += `<br><span class="text-muted" style="font-size:0.75rem;">PDF备注: ${escapeHtml(short)}</span>`;
+                    }
+                    return s + '</div>';
+                }).join('')}</div>
+            </div>`;
+        }
+        // 收集修改单详情
+        const allModifyDetails = [];
+        results.forEach(r => {
+            if (r.modify_details && r.modify_details.length > 0) {
+                r.modify_details.forEach(md => { md._file = r.file; allModifyDetails.push(md); });
+            }
+        });
+        if (allModifyDetails.length > 0) {
+            summary += `<div class="alert alert-info py-1 px-2 mt-2 mb-1" style="font-size:0.82rem;border-radius:4px;">
+                <i class="bi bi-pencil-square me-1"></i><b>修改单详情（${allModifyDetails.length}个）：</b>`;
+            allModifyDetails.forEach(md => {
+                let parts = [];
+                Object.entries(md.changes || {}).forEach(([k, v]) => {
+                    parts.push(`${escapeHtml(k)}→${escapeHtml(v)}`);
+                });
+                if (md.fill_empty && md.fill_empty.length > 0) {
+                    parts.push(`补填: ${md.fill_empty.join(',')}`);
+                }
+                if (md.note_changed) parts.push('备注变化');
+                summary += `<div class="small ms-2 mt-1"><b>${escapeHtml(md.sku)}</b>（${escapeHtml(md.sheet)} 行${md.row}）：${parts.join(' | ')}</div>`;
+            });
+            summary += `</div>`;
+        }
+        // ===== 入单后自检结果 =====
+        const allValidationIssues = [];
+        let validationPassCount = 0;
+        results.forEach(r => {
+            if (r.validation_ok) validationPassCount++;
+            if (r.validation_issues && r.validation_issues.length > 0) {
+                r.validation_issues.forEach(vi => { vi._file = r.file; allValidationIssues.push(vi); });
+            }
+        });
+        if (results.length > 0) {
+            if (allValidationIssues.length === 0) {
+                summary += `<div class="alert alert-success py-1 px-2 mt-2 mb-1" style="font-size:0.82rem;border-radius:4px;">
+                    <i class="bi bi-shield-check me-1"></i><b>入单自检：</b>全部${validationPassCount}个文件验证通过 ✓</div>`;
+            } else {
+                const errors = allValidationIssues.filter(v => v.level === 'error');
+                const warnings = allValidationIssues.filter(v => v.level === 'warning');
+                summary += `<div class="alert alert-danger py-1 px-2 mt-2 mb-1" style="font-size:0.82rem;border-radius:4px;">
+                    <i class="bi bi-shield-exclamation me-1"></i><b>入单自检发现${allValidationIssues.length}个问题：</b>`;
+                if (errors.length > 0) {
+                    summary += `<div class="mt-1"><b class="text-danger">错误(${errors.length})：</b></div>`;
+                    errors.forEach(vi => {
+                        summary += `<div class="small ms-2"><i class="bi bi-x-circle text-danger me-1"></i>`;
+                        if (vi.sku) summary += `<b>${escapeHtml(vi.sku)}</b> `;
+                        summary += `${escapeHtml(vi.msg)}`;
+                        if (vi._file) summary += ` <span class="text-muted">(${escapeHtml(vi._file)})</span>`;
+                        summary += `</div>`;
+                    });
+                }
+                if (warnings.length > 0) {
+                    summary += `<div class="mt-1"><b class="text-warning">警告(${warnings.length})：</b></div>`;
+                    warnings.forEach(vi => {
+                        summary += `<div class="small ms-2"><i class="bi bi-exclamation-triangle text-warning me-1"></i>`;
+                        if (vi.sku) summary += `<b>${escapeHtml(vi.sku)}</b> `;
+                        summary += `${escapeHtml(vi.msg)}`;
+                        if (vi._file) summary += ` <span class="text-muted">(${escapeHtml(vi._file)})</span>`;
+                        summary += `</div>`;
+                    });
+                }
+                summary += `</div>`;
+            }
+        }
+
         document.getElementById('done-summary').innerHTML = summary;
 
+        // 收集所有比例警告并渲染面板
+        const allRatioWarnings = [];
+        results.forEach(r => {
+            if (r.ratio_warnings && r.ratio_warnings.length > 0) {
+                r.ratio_warnings.forEach(rw => allRatioWarnings.push(rw));
+            }
+        });
+        const ratioPanel = document.getElementById('ratio-pending-panel');
+        if (allRatioWarnings.length > 0) {
+            document.getElementById('ratio-pending-count').textContent = allRatioWarnings.length;
+            let rhtml = '';
+            // 按PO分组
+            const byPO = {};
+            allRatioWarnings.forEach(rw => {
+                const key = rw.po || '未知PO';
+                if (!byPO[key]) byPO[key] = [];
+                byPO[key].push(rw);
+            });
+            Object.keys(byPO).forEach(po => {
+                rhtml += `<div class="border rounded p-2 mb-2" style="border-color:#e67e00 !important;">`;
+                rhtml += `<div class="fw-bold" style="color:#e67e00;"><i class="bi bi-file-earmark-text me-1"></i>PO: ${po} <span class="badge bg-warning text-dark">${byPO[po].length}条</span></div>`;
+                byPO[po].forEach(rw => {
+                    rhtml += `<div class="ms-3 mt-1 small">`;
+                    rhtml += `<span class="fw-bold">货号: ${rw.sku || '?'}</span>`;
+                    rhtml += ` → <span class="text-muted">${rw.file} / ${rw.sheet} / 第${rw.row}行</span>`;
+                    rhtml += `<div class="mt-1 p-1 rounded" style="background:#fff3cd; font-family:monospace; font-size:0.8rem;">${rw.pattern}</div>`;
+                    rhtml += `</div>`;
+                });
+                rhtml += `</div>`;
+            });
+            document.getElementById('ratio-pending-list').innerHTML = rhtml;
+            ratioPanel.style.display = '';
+        } else {
+            ratioPanel.style.display = 'none';
+        }
+
         if (failed.length > 0) {
-            document.getElementById('failed-card').style.display = 'block';
             let fhtml = '';
             let hasLock = false, hasError = false;
             failed.forEach(f => {
                 const reason = f.reason || f.msg || '未知错误';
-                const isLock = reason.includes('占用') || reason.includes('只读') || reason.includes('Permission');
+                const isLock = reason.includes('占用') || reason.includes('只读') || reason.includes('Permission') || reason.includes('编辑');
                 if (isLock) hasLock = true; else hasError = true;
                 const badge = isLock
                     ? '<span class="badge bg-warning text-dark">待重试</span>'
                     : '<span class="badge bg-danger">处理异常</span>';
-                const tip = isLock ? '文件被其他人打开，关闭后可重试' : '处理过程中出错，请检查文件';
+                const tip = isLock
+                    ? (reason.includes('编辑') ? reason : '文件被其他人打开，关闭后可重试')
+                    : escapeHtml(reason);
+                const displayName = f.fname || f.file.split(/[\\/]/).pop() || f.file;
+                const detailHtml = f.detail ? `<br><small class="text-muted">涉及：${escapeHtml(f.detail)}</small>` : '';
                 fhtml += `<div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                    <div><b>${f.file}</b><br><small class="text-danger" title="${reason}">${tip}</small></div>
+                    <div><b>${escapeHtml(displayName)}</b><br><small class="text-danger">${tip}</small>${detailHtml}</div>
                     ${badge}
                 </div>`;
             });
-            // 动态更新标题
             const title = hasLock && hasError ? '部分文件处理失败'
                 : hasLock ? '因被占用未保存' : '处理异常';
-            document.getElementById('failed-title').innerHTML =
-                `<i class="bi bi-exclamation-triangle me-2"></i>${title}`;
+            document.getElementById('failed-title').textContent = title;
             document.getElementById('failed-list').innerHTML = fhtml;
+            // "一键重试保存"仅在有本地副本时可用（预检拦截的无本地副本，只能重新入单）
+            const hasLocal = failed.some(f => f.local);
+            document.getElementById('retry-failed-btn').style.display = (hasLock && hasLocal) ? '' : 'none';
+            document.getElementById('reentry-card').style.display = 'block';
         } else {
-            document.getElementById('failed-card').style.display = 'none';
+            document.getElementById('failed-list').innerHTML = '';
+            document.getElementById('retry-failed-btn').style.display = 'none';
+        }
+
+        // 显示跳过的项（找不到排期/货号不在排期中）
+        if (skipped.length > 0) {
+            let shtml = '';
+            let hasNoFile = false, hasNoItem = false;
+            skipped.forEach(s => {
+                const isNoItem = s.reason === 'no_item';
+                if (isNoItem) hasNoItem = true; else hasNoFile = true;
+                const badge = isNoItem
+                    ? '<span class="badge bg-warning text-dark">货号不在排期</span>'
+                    : '<span class="badge bg-secondary">找不到排期文件</span>';
+                const tip = isNoItem
+                    ? '已找到对应排期文件，但该货号不在排期中——可能是新产品或PDF货号有误'
+                    : '找不到对应的排期文件，需手动处理';
+                const qtyStr = s.qty ? ` · ${s.qty}pcs` : '';
+                const poStr = s.po ? `PO ${s.po}` : '';
+                shtml += `<div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                    <div><b>${s.sku}</b>${qtyStr}<br><small class="text-muted">${poStr}</small><br><small class="text-warning">${tip}</small></div>
+                    ${badge}
+                </div>`;
+            });
+            const skipTitle = hasNoItem && hasNoFile ? '部分货号未入单'
+                : hasNoItem ? '货号不在排期中（新产品或读取有误）' : '找不到对应排期文件';
+            let skipCard = document.getElementById('skipped-card');
+            if (!skipCard) {
+                skipCard = document.createElement('div');
+                skipCard.id = 'skipped-card';
+                skipCard.className = 'card mt-3';
+                skipCard.innerHTML = `<div class="card-header bg-warning bg-opacity-25 fw-bold" id="skipped-title"></div><div class="card-body p-2" id="skipped-list"></div>`;
+                document.getElementById('reentry-card').insertAdjacentElement('afterend', skipCard);
+            }
+            skipCard.style.display = 'block';
+            document.getElementById('skipped-title').textContent = `⚠️ ${skipTitle}（${skipped.length} 条未入单）`;
+            document.getElementById('skipped-list').innerHTML = shtml;
+        } else {
+            const skipCard = document.getElementById('skipped-card');
+            if (skipCard) skipCard.style.display = 'none';
         }
 
         loadRecentHistory();
@@ -903,13 +2177,15 @@ async function retryFailed() {
     App.showLoading('正在重试保存...');
     try {
         const data = await App.api('/api/retry-failed', {
-            method: 'POST', body: { items: FAILED }
+            method: 'POST', body: { items: FAILED },
+            timeout: 600000
         });
         const ok = data.ok || [];
         FAILED = data.failed || [];
         App.alert(`成功保存 ${ok.length} 个，仍有 ${FAILED.length} 个未保存`, 'info');
         if (FAILED.length === 0) {
-            document.getElementById('failed-card').style.display = 'none';
+            document.getElementById('failed-list').innerHTML = '';
+            document.getElementById('retry-failed-btn').style.display = 'none';
         }
     } catch (e) {
         App.alert('重试失败: ' + e.message, 'danger');
@@ -1032,11 +2308,11 @@ async function searchPO() {
         c.innerHTML = `<small class="text-success mb-1 d-block">找到 ${results.length} 条${fuzzy ? '（模糊）' : ''}</small>` +
             results.slice(0, 30).map(r => `<div class="search-item">
                 <div class="d-flex justify-content-between">
-                    <b>${r.sheet}</b>
+                    <b>${escapeHtml(r.sheet||'')}</b>
                     <small class="text-muted">行${r.row}</small>
                 </div>
-                <small>${r.data.F||r.data.G||''} | PO:${r.data.D||''} | ${r.data.I||''}pcs | ${r.data.M||''}</small>
-                ${r.hit_col ? `<span class="badge bg-info bg-opacity-10 text-info" style="font-size:0.6rem;">匹配:${r.hit_col}</span>` : ''}
+                <small>${escapeHtml(r.data.F||r.data.G||'')} | PO:${escapeHtml(r.data.D||'')} | ${escapeHtml(r.data.I||'')}pcs | ${escapeHtml(r.data.M||'')}</small>
+                ${r.hit_col ? `<span class="badge bg-info bg-opacity-10 text-info" style="font-size:0.6rem;">匹配:${escapeHtml(r.hit_col)}</span>` : ''}
             </div>`).join('');
     } catch (e) {
         App.alert('搜索失败: ' + e.message, 'danger');
@@ -1050,7 +2326,7 @@ async function checkEmails() {
     try {
         const data = await App.api('/api/email/check', { method: 'POST', body: {} });
         if (data.error) {
-            el.innerHTML = `<div class="text-warning small py-2"><i class="bi bi-exclamation-triangle me-1"></i>${data.error}</div>`;
+            el.innerHTML = `<div class="text-warning small py-2"><i class="bi bi-exclamation-triangle me-1"></i>${escapeHtml(data.error)}</div>`;
             return;
         }
         if (!data.emails || data.emails.length === 0) {
@@ -1059,13 +2335,15 @@ async function checkEmails() {
         }
         let html = `<small class="text-success d-block mb-1">发现 ${data.emails.length} 封含PDF的邮件</small>`;
         data.emails.forEach(e => {
+            // #31/#33 XSS修复：主题/发件人/附件名全部转义
             html += `<div class="border-bottom py-1" style="font-size:0.78rem;">
-                <div class="fw-bold">${e.subject || '(无主题)'}</div>
-                <small class="text-muted">${e.from}</small>
+                <div class="fw-bold">${escapeHtml(e.subject || '(无主题)')}</div>
+                <small class="text-muted">${escapeHtml(e.from)}</small>
                 <div class="mt-1">`;
             e.attachments.forEach(a => {
-                html += `<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="downloadEmailPDF('${a.msg_id}','${a.filename.replace(/'/g, "\\'")}')" style="font-size:0.7rem;">
-                    <i class="bi bi-file-pdf me-1"></i>${a.filename}
+                // #33 onclick注入修复：用escapeJs处理参数
+                html += `<button class="btn btn-sm btn-outline-primary me-1 mb-1" onclick="downloadEmailPDF('${escapeJs(a.msg_id)}','${escapeJs(a.filename)}')" style="font-size:0.7rem;">
+                    <i class="bi bi-file-pdf me-1"></i>${escapeHtml(a.filename)}
                 </button>`;
             });
             html += '</div></div>';
@@ -1116,10 +2394,13 @@ async function loadRecentHistory() {
 
 function resetAll() {
     ORDERS = []; FAILED = [];
+    try { sessionStorage.removeItem('_orders'); } catch(e) {}
     document.getElementById('pdf-input').value = '';
     document.getElementById('results-area').style.display = 'none';
     document.getElementById('done-area').style.display = 'none';
+    document.getElementById('queue-area').style.display = 'none';
     document.getElementById('upload-card').style.display = 'block';
+    if (_queuePollTimer) { clearInterval(_queuePollTimer); _queuePollTimer = null; }
 }
 
 // ========== 异常提醒 ==========
@@ -1244,30 +2525,42 @@ async function loadFileStatus() {
     el.innerHTML = '<div class="text-center py-2"><div class="spinner-border spinner-border-sm"></div> 正在扫描Z盘...</div>';
     try {
         const files = await App.api('/api/file-status');
-        let locked = 0, available = 0;
+        let locked = 0, readonly = 0, available = 0;
         let html = '';
-        // 先显示被占用的文件
+        // 先显示被占用和只读的文件
         files.forEach(f => {
+            const short = f.fname.length > 35 ? f.fname.substring(0, 35) + '...' : f.fname;
             if (f.status === 'locked') {
                 locked++;
-                const short = f.fname.length > 35 ? f.fname.substring(0, 35) + '...' : f.fname;
                 html += `<div class="d-flex align-items-center gap-2 py-1 border-bottom" style="font-size:0.78rem;">
                     <i class="bi bi-lock-fill text-danger"></i>
                     <div class="flex-fill">
-                        <div class="fw-bold text-danger">${short}</div>
-                        <small class="text-muted">${f.lock_type}${f.user ? ' - ' + f.user : ''}</small>
+                        <div class="fw-bold text-danger">${escapeHtml(short)}</div>
+                        <small class="text-muted">${escapeHtml(f.lock_type)}${f.user ? ' - ' + escapeHtml(f.user) : ''}</small>
+                    </div>
+                </div>`;
+            } else if (f.status === 'readonly') {
+                readonly++;
+                html += `<div class="d-flex align-items-center gap-2 py-1 border-bottom" style="font-size:0.78rem;">
+                    <i class="bi bi-shield-lock-fill text-warning"></i>
+                    <div class="flex-fill">
+                        <div class="fw-bold text-warning">${escapeHtml(short)}</div>
+                        <small class="text-muted">只读</small>
                     </div>
                 </div>`;
             } else {
                 available++;
             }
         });
-        if (locked === 0) {
+        if (locked === 0 && readonly === 0) {
             html = '<div class="text-center py-2 text-success small"><i class="bi bi-check-circle me-1"></i>所有排期文件均可用</div>';
         }
         el.innerHTML = html;
-        document.getElementById('file-status-summary').innerHTML =
-            `<span class="text-success">${available} 可用</span> | <span class="text-danger">${locked} 被占用</span> | 共 ${files.length} 个文件`;
+        const parts = [`<span class="text-success">${available} 可用</span>`];
+        if (locked > 0) parts.push(`<span class="text-danger">${locked} 被占用</span>`);
+        if (readonly > 0) parts.push(`<span class="text-warning">${readonly} 只读</span>`);
+        parts.push(`共 ${files.length} 个文件`);
+        document.getElementById('file-status-summary').innerHTML = parts.join(' | ');
     } catch(e) {
         el.innerHTML = `<div class="text-center py-2 text-danger small">加载失败: ${e.message}</div>`;
     }
@@ -1296,19 +2589,24 @@ function renderScheduleDirs(list) {
         el.innerHTML = '<div class="text-center py-2 text-muted small">无匹配结果</div>';
         return;
     }
+    // #32 修复：使用 data-path 属性 + 事件委托代替内联onclick
     el.innerHTML = list.map(g => {
         const info = [];
         if (g.file_count) info.push(`${g.file_count}个文件`);
         if (g.sub_count) info.push(`${g.sub_count}个子目录`);
-        return `<div class="sched-dir-item" onclick="openScheduleDir('${g.path.replace(/\\/g, '\\\\')}')">
+        return `<div class="sched-dir-item" data-dir-path="${escapeHtml(g.path)}">
             <i class="bi bi-folder-fill text-warning me-2"></i>
             <div class="flex-fill">
-                <div class="fw-bold" style="font-size:0.82rem;">${g.name}</div>
-                <small class="text-muted">${info.join(' | ') || '空目录'}</small>
+                <div class="fw-bold" style="font-size:0.82rem;">${escapeHtml(g.name)}</div>
+                <small class="text-muted">${escapeHtml(info.join(' | ') || '点击打开')}</small>
             </div>
             <i class="bi bi-box-arrow-up-right text-muted" style="font-size:0.75rem;"></i>
         </div>`;
     }).join('');
+    // 事件委托绑定点击
+    el.querySelectorAll('.sched-dir-item[data-dir-path]').forEach(item => {
+        item.addEventListener('click', () => openScheduleDir(item.dataset.dirPath));
+    });
 }
 
 function filterScheduleDirs() {
@@ -1462,11 +2760,8 @@ async function loadUndoInfo() {
             let html = '';
             for (const b of _undoBatches) {
                 const ops = (b.operations || []);
-                const typeIcons = {'new':'<span class="badge bg-success me-1">新增</span>',
-                                   'modify':'<span class="badge bg-primary me-1">修改</span>',
-                                   'cancel':'<span class="badge bg-danger me-1">取消</span>'};
                 let opsHtml = ops.map(op => {
-                    const icon = typeIcons[op.type] || `<span class="badge bg-secondary me-1">${op.type}</span>`;
+                    const icon = TYPE_ICONS[op.type] || `<span class="badge bg-secondary me-1">${op.type}</span>`;
                     return `${icon}<b>${op.sku||''}</b> ${op.customer||''} ${op.qty ? op.qty+'pcs' : ''}`;
                 }).join('<br>');
                 if (!opsHtml) opsHtml = b.label || '操作详情不可用';
@@ -1481,6 +2776,10 @@ async function loadUndoInfo() {
                             <span class="ms-2"><i class="bi bi-file-earmark me-1"></i>${files}</span>
                         </div>
                     </div>
+                    <button class="btn btn-outline-danger btn-sm" onclick="deleteUndoEntry('${b.id}')"
+                            title="删除此记录（不恢复文件）" style="min-width:28px; padding:2px 7px; align-self:center;">
+                        <i class="bi bi-trash3"></i>
+                    </button>
                 </div>`;
             }
             list.innerHTML = html;
@@ -1491,11 +2790,7 @@ async function loadUndoInfo() {
 }
 setTimeout(loadUndoInfo, 2500);
 
-function toggleUndoAll() {
-    const checks = document.querySelectorAll('.undo-check');
-    const allChecked = Array.from(checks).every(c => c.checked);
-    checks.forEach(c => c.checked = !allChecked);
-}
+function toggleUndoAll() { _toggleAll('.undo-check'); }
 
 async function undoSelected() {
     const checks = document.querySelectorAll('.undo-check:checked');
@@ -1525,6 +2820,39 @@ async function undoSelected() {
 // 兼容旧函数名
 async function undoLast() { undoSelected(); }
 
+async function deleteUndoEntry(batchId) {
+    if (!confirm('确认删除此条记录？\n\n仅从列表移除，不会恢复排期文件。')) return;
+    try {
+        const result = await App.api('/api/undo-delete', {
+            method: 'POST', body: { batch_ids: [batchId] }
+        });
+        if (result.error) {
+            App.alert(result.error, 'danger');
+        } else {
+            loadUndoInfo();
+        }
+    } catch(e) {
+        App.alert('删除失败: ' + e.message, 'danger');
+    }
+}
+
+async function deleteAllUndo() {
+    if (!confirm('确认清空所有撤回记录？\n\n仅清除列表和备份文件，不会恢复排期。')) return;
+    try {
+        const result = await App.api('/api/undo-delete', {
+            method: 'POST', body: { batch_ids: null }
+        });
+        if (result.error) {
+            App.alert(result.error, 'danger');
+        } else {
+            App.alert(result.msg || '已清空', 'success');
+            loadUndoInfo();
+        }
+    } catch(e) {
+        App.alert('清空失败: ' + e.message, 'danger');
+    }
+}
+
 // ========== 删除已入单行 ==========
 let _lastBatchEntries = [];  // 存储上次入单的详细条目（用于删除和重入）
 let _lastBatchOrders = [];   // 存储上次的原始orders数据（用于重入）
@@ -1535,27 +2863,29 @@ function showDeletePanel(entries, orders) {
     const card = document.getElementById('delete-entries-card');
     const list = document.getElementById('delete-entries-list');
     const reCard = document.getElementById('reentry-card');
+    const hasFailed = document.getElementById('failed-list').innerHTML.trim().length > 0;
     if (!_lastBatchEntries.length) {
         card.style.display = 'none';
-        reCard.style.display = 'none';
+        if (!hasFailed) reCard.style.display = 'none';
         return;
     }
     card.style.display = 'block';
     reCard.style.display = 'block';
     let html = '';
     _lastBatchEntries.forEach((e, i) => {
-        const typeIcons = {'new':'<span class="badge bg-success me-1">新增</span>',
-                           'modify':'<span class="badge bg-primary me-1">修改</span>',
-                           'cancel':'<span class="badge bg-danger me-1">取消</span>'};
-        const icon = typeIcons[e.type] || '<span class="badge bg-secondary me-1">操作</span>';
+        const icon = TYPE_ICONS[e.type] || '<span class="badge bg-secondary me-1">操作</span>';
+        // #37 修复：新增行row=0行号未知，禁用checkbox防止误删
+        const canDelete = e.row && e.row > 0;
+        const chkDisabled = canDelete ? '' : 'disabled title="新增行行号未知，无法直接删除"';
+        const rowText = e.row ? `行${e.row}` : '<span class="text-warning">行号未知</span>';
         html += `<div class="d-flex align-items-center gap-2 py-1 border-bottom" style="font-size:0.85rem;">
             <input type="checkbox" class="form-check-input del-check" data-idx="${i}"
-                   style="min-width:18px;min-height:18px;">
+                   style="min-width:18px;min-height:18px;" ${chkDisabled}>
             <div class="flex-fill">
-                ${icon}<b>${e.sku || ''}</b>
-                <span class="text-muted ms-1">${e.file || ''} / ${e.sheet || ''} 行${e.row || '?'}</span>
-                ${e.customer ? `<span class="ms-1">${e.customer}</span>` : ''}
-                ${e.qty ? `<span class="ms-1">${e.qty}pcs</span>` : ''}
+                ${icon}<b>${escapeHtml(e.sku || '')}</b>
+                <span class="text-muted ms-1">${escapeHtml(e.file || '')} / ${escapeHtml(e.sheet || '')} ${rowText}</span>
+                ${e.customer ? `<span class="ms-1">${escapeHtml(e.customer)}</span>` : ''}
+                ${e.qty ? `<span class="ms-1">${escapeHtml(String(e.qty))}pcs</span>` : ''}
             </div>
         </div>`;
     });
@@ -1564,11 +2894,56 @@ function showDeletePanel(entries, orders) {
     loadScheduledInfo();
 }
 
-function toggleDeleteAll() {
-    const checks = document.querySelectorAll('.del-check');
-    const allChecked = Array.from(checks).every(c => c.checked);
-    checks.forEach(c => c.checked = !allChecked);
+// ========== 所有货号行"已确认"标记 ==========
+function updateOrderDoneProgress(cb) {
+    // 单行样式：勾选变灰+删除线
+    const item = cb.closest('.action-item');
+    if (item) {
+        item.style.opacity = cb.checked ? '0.35' : '1';
+        item.style.textDecoration = cb.checked ? 'line-through' : 'none';
+    }
+    // 检查所属订单卡片是否全部勾选
+    const card = cb.closest('.order-card');
+    if (card) {
+        const all = card.querySelectorAll('.order-done-check');
+        const done = card.querySelectorAll('.order-done-check:checked');
+        const statusEl = card.querySelector('.order-done-status');
+        if (statusEl) {
+            statusEl.style.display = (done.length === all.length && all.length > 0) ? 'inline' : 'none';
+        }
+    }
 }
+
+// ========== 手动入单"已完成"标记 ==========
+function updateManualDoneProgress() {
+    const all = document.querySelectorAll('.manual-done-check');
+    const done = document.querySelectorAll('.manual-done-check:checked');
+    // 勾选行变灰+删除线
+    all.forEach(cb => {
+        const row = cb.closest('.manual-item');
+        if (row) {
+            row.style.opacity = cb.checked ? '0.4' : '1';
+            row.style.textDecoration = cb.checked ? 'line-through' : 'none';
+        }
+    });
+    // 更新进度
+    const prog = document.getElementById('manual-done-progress');
+    if (prog) prog.textContent = `已完成 ${done.length}/${all.length}`;
+    // 全部完成时面板边框变绿
+    const panel = document.querySelector('#manual-summary-panel .card');
+    if (panel) {
+        panel.style.borderColor = done.length === all.length && all.length > 0 ? '#22c55e' : '#f59e0b';
+    }
+}
+
+function _toggleAll(selector, callback) {
+    const checks = document.querySelectorAll(selector);
+    const allChecked = checks.length > 0 && Array.from(checks).every(c => c.checked);
+    checks.forEach(c => c.checked = !allChecked);
+    if (callback) callback();
+}
+function toggleManualDoneAll() { _toggleAll('.manual-done-check', updateManualDoneProgress); }
+function toggleDeleteAll() { _toggleAll('.del-check'); }
 
 async function deleteSelectedEntries() {
     const checks = document.querySelectorAll('.del-check:checked');
@@ -1625,7 +3000,8 @@ async function reentryNow() {
     try {
         const data = await App.api('/api/reentry', {
             method: 'POST',
-            body: { orders: _lastBatchOrders.filter(o => o.type !== 'error') }
+            body: { orders: _lastBatchOrders.filter(o => o.type !== 'error') },
+            timeout: 600000
         });
         const results = data.results || [];
         const failed = data.failed || [];
@@ -1648,6 +3024,24 @@ async function reentryNow() {
         failed.forEach(f => {
             html += `<div class="mt-1 text-danger"><i class="bi bi-x-circle me-1"></i><b>${f.file}</b>: ${f.reason || f.msg || '失败'}</div>`;
         });
+        // 入单自检结果
+        const vIssues = [];
+        let vPass = 0;
+        results.forEach(r => {
+            if (r.validation_ok) vPass++;
+            if (r.validation_issues) r.validation_issues.forEach(vi => { vi._file = r.file; vIssues.push(vi); });
+        });
+        if (results.length > 0) {
+            if (vIssues.length === 0) {
+                html += `<div class="mt-2 text-success small"><i class="bi bi-shield-check me-1"></i>自检通过 ✓</div>`;
+            } else {
+                html += `<div class="mt-2 text-danger small"><i class="bi bi-shield-exclamation me-1"></i><b>自检发现${vIssues.length}个问题：</b></div>`;
+                vIssues.forEach(vi => {
+                    const icon = vi.level === 'error' ? 'x-circle text-danger' : 'exclamation-triangle text-warning';
+                    html += `<div class="small ms-3"><i class="bi bi-${icon} me-1"></i>${vi.sku ? '<b>'+escapeHtml(vi.sku)+'</b> ' : ''}${escapeHtml(vi.msg)}</div>`;
+                });
+            }
+        }
         html += '</div>';
         resultDiv.innerHTML = html;
         resultDiv.style.display = 'block';
@@ -1924,6 +3318,46 @@ async function syncSchedules() {
     } catch(e) {
         App.alert('同步失败: ' + e.message, 'danger');
     } finally { App.hideLoading(); }
+}
+
+// 定时重试被占用货号
+function scheduleLockedRetry() {
+    const timeEl = document.getElementById('locked-retry-time');
+    const btnEl = document.getElementById('btn-schedule-locked');
+    if (!timeEl || !_LOCKED_SKU_ITEMS.length) {
+        App.alert('没有被占用的货号可重试', 'warning');
+        return;
+    }
+    const timeVal = timeEl.value;
+    if (!timeVal) { App.alert('请选择时间', 'warning'); return; }
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>提交中...';
+    App.api('/api/schedule-retry', {
+        method: 'POST',
+        body: {
+            type: 'locked_retry',
+            time: timeVal,
+            items: _LOCKED_SKU_ITEMS,
+            label: `被占用货号重入 (${_LOCKED_SKU_ITEMS.length}个SKU)`
+        }
+    }).then(d => {
+        App.alert(`已安排 ${timeVal} 自动重入 ${_LOCKED_SKU_ITEMS.length} 个被占用货号`, 'success');
+        btnEl.innerHTML = `<i class="bi bi-check-lg me-1"></i>已安排 ${timeVal}`;
+        btnEl.classList.replace('btn-warning', 'btn-success');
+    }).catch(e => {
+        App.alert('安排失败: ' + e.message, 'danger');
+        btnEl.disabled = false;
+        btnEl.innerHTML = '<i class="bi bi-clock-history me-1"></i>定时重入';
+    });
+}
+
+// 立即重试被占用货号
+function retryLockedNow() {
+    const now = new Date();
+    const hm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    const timeEl = document.getElementById('locked-retry-time');
+    if (timeEl) timeEl.value = hm;
+    scheduleLockedRetry();
 }
 </script>
 {% endblock %}

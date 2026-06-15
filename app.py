@@ -343,6 +343,75 @@ def master_schedule_set_path():
     return jsonify({'ok': True, 'path': new_path, 'msg': f'已切换到: {new_path}'})
 
 
+@app.route('/api/ignore-items', methods=['GET'])
+def get_ignore_items():
+    """获取黑名单列表"""
+    p = os.path.join(APP_DIR, 'data', 'ignore_items.json')
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return jsonify({'items': data.get('ignore_items', [])})
+    except Exception as e:
+        return jsonify({'items': [], 'error': str(e)})
+
+
+@app.route('/api/ignore-items', methods=['POST'])
+def update_ignore_items():
+    """更新黑名单列表"""
+    items = request.json.get('items', [])
+    # 清洗：去空白、去重、纯数字排序
+    cleaned = sorted(set(str(x).strip() for x in items if str(x).strip()),
+                     key=lambda x: int(x) if x.isdigit() else float('inf'))
+    p = os.path.join(APP_DIR, 'data', 'ignore_items.json')
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    data['ignore_items'] = cleaned
+    with open(p, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    # 清除缓存让下次加载生效
+    _ignore_cache['mtime'] = None
+    return jsonify({'ok': True, 'items': cleaned, 'count': len(cleaned)})
+
+
+@app.route('/api/dual-map', methods=['GET'])
+def get_dual_map():
+    """获取双排期货号映射"""
+    p = os.path.join(APP_DIR, 'data', 'dual_schedule_map.json')
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # 过滤掉_开头的说明字段
+        items = {k: v for k, v in data.items() if not k.startswith('_')}
+        return jsonify({'items': items})
+    except Exception as e:
+        return jsonify({'items': {}, 'error': str(e)})
+
+
+@app.route('/api/dual-map', methods=['POST'])
+def update_dual_map():
+    """更新双排期货号映射"""
+    items = request.json.get('items', {})
+    p = os.path.join(APP_DIR, 'data', 'dual_schedule_map.json')
+    # 保留原有的_说明字段
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    meta = {k: v for k, v in data.items() if k.startswith('_')}
+    meta.update(items)
+    with open(p, 'w', encoding='utf-8') as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+    # 刷新内存缓存
+    from master_schedule import _load_dual_map, _DUAL_MAP
+    import master_schedule
+    master_schedule._DUAL_MAP = _load_dual_map()
+    return jsonify({'ok': True, 'count': len(items)})
+
+
 @app.route('/api/master-schedule-upload-file', methods=['POST'])
 def master_schedule_upload_file():
     """上传总排期文件（本地Excel上传到服务器使用）"""

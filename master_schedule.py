@@ -99,14 +99,25 @@ def _expand_dual_items(lines):
     result = []
     for ln in lines:
         sku_spec = ln.get('sku_spec', '') or ln.get('sku', '')
-        base = re.match(r'(\d+)', str(sku_spec).strip())
+        _sku_s = str(sku_spec).strip().upper()
+        # 提取数字前缀（如77896）和完整前缀（如MEC426，去掉-S00x及后续）
+        base = re.match(r'(\d+)', _sku_s)
         base_num = base.group(1) if base else ''
+        full_prefix = re.match(r'([A-Z]*\d+[A-Z]*)', _sku_s)
+        full_key = full_prefix.group(1) if full_prefix else ''
         cfg = dual_map.get(base_num) if base_num else None
+        if not cfg and full_key:
+            cfg = dual_map.get(full_key)
         if not cfg:
             result.append(ln)
             continue
         targets = cfg.get('targets', [])
         mode = cfg.get('mode', 'none')
+        # 已含任意系列号则跳过（PO文件已预展开，避免重复插入）
+        if any(t in _sku_s for t in targets):
+            logging.info(f'[双排期跳过] {sku_spec} 已含系列号，不再展开')
+            result.append(ln)
+            continue
         for series in targets:
             new_ln = dict(ln)
             new_item = _insert_series(sku_spec, series, mode)
@@ -131,6 +142,15 @@ def _item_base(sku):
     return m.group(1).upper() if m else ''
 
 
+def _lookup_cn(cn_names, sku):
+    """查中文名：先按完整货号精确匹配，再fallback基础码"""
+    full = re.sub(r'[\s\n]+', '', str(sku).strip()).upper()
+    if full in cn_names:
+        return cn_names[full]
+    base = _item_base(full)
+    return cn_names.get(base, '') if base else ''
+
+
 def _normalize_po(v):
     """PO号标准化：去掉.0后缀、去空白"""
     s = str(v or '').strip()
@@ -145,13 +165,13 @@ _HY_PREFIXES = {'15746','15749','15751','15754','15755','15760',
 
 
 def _is_fuggler(sku):
-    """判断是否Fuggler系列（157开头 或 125160/125169）"""
+    """判断是否Fuggler系列（157开头），验货期-2天"""
     s = re.sub(r'[\s\n]+', '', str(sku or '')).upper()
     base = re.match(r'(\d+)', s)
     if not base:
         return False
     num = base.group(1)
-    return num.startswith('157') or num.startswith('125160') or num.startswith('125169')
+    return num.startswith('157')
 
 
 def _is_hy(sku):
@@ -202,12 +222,14 @@ def _date_serial(dt):
 def _build_index(filepath):
     """用openpyxl只读扫描总排期，建立：
     1. (PO+货号+line_no)→行号 的匹配索引
-    2. 货号基础码→中文名 的中文名索引（取最后出现的，即最新）
+    2. 中文名索引：完整货号→中文名 + 基础码→中文名(最多出现的)
     Returns: index_dict, cn_name_dict, max_row
     """
     import openpyxl
+    from collections import Counter
     index = {}       # (po, item_upper, sku_line) → row
-    cn_names = {}    # item_base_upper → cn_name（取最后出现的）
+    cn_names = {}    # 完整货号/基础码 → cn_name
+    _cn_base_counter = {}  # 基础码 → Counter({中文名: 出现次数})
     two_key_count = {}  # (po, item) → 出现次数，用于判断二元组是否唯一
     max_row = 1
     try:
@@ -220,8 +242,15 @@ def _build_index(filepath):
         if not ws:
             ws = wb[wb.sheetnames[0]]
 
+        _empty_streak = 0  # 连续空行计数，超过500行提前终止（避免扫描100万空行）
         for row in ws.iter_rows(min_row=2, max_col=30):
-            r = row[0].row
+            try:
+                r = row[0].row
+            except AttributeError:
+                _empty_streak += 1
+                if _empty_streak > 500:
+                    break
+                continue  # EmptyCell无row属性，跳过空行
             if r > max_row:
                 max_row = r
             po_val = _normalize_po(row[COL['po'] - 1].value)
@@ -229,7 +258,13 @@ def _build_index(filepath):
             sku_line = str(row[COL['sku_line'] - 1].value or '').strip()
             cn_val = str(row[COL['cn_name'] - 1].value or '').strip()
 
+            if not po_val and not item_val:
+                _empty_streak += 1
+                if _empty_streak > 500:
+                    logging.info(f'[总排期索引] 连续{_empty_streak}空行，提前终止于row={r}')
+                    break
             if po_val and item_val:
+                _empty_streak = 0  # 有数据，重置计数
                 key = (po_val, item_val, sku_line)
                 index[key] = r
                 key2 = (po_val, item_val)
@@ -237,11 +272,19 @@ def _build_index(filepath):
                 if key2 not in index:
                     index[key2] = r
 
-            # 中文名索引：按货号基础码存最后出现的有效中文名
+            # 中文名索引：按完整货号精确存储 + 基础码统计出现次数
             if item_val and cn_val and any('\u4e00' <= c <= '\u9fff' for c in cn_val):
+                cn_names[item_val] = cn_val  # 完整货号精确匹配
                 base = _item_base(item_val)
                 if base:
-                    cn_names[base] = cn_val
+                    if base not in _cn_base_counter:
+                        _cn_base_counter[base] = Counter()
+                    _cn_base_counter[base][cn_val] += 1
+
+        # 基础码取出现次数最多的中文名作为fallback（不覆盖已有的完整货号条目）
+        for base, counter in _cn_base_counter.items():
+            if base not in cn_names:
+                cn_names[base] = counter.most_common(1)[0][0]
 
         # 同一(PO,货号)出现多行时，删除二元组索引避免错误兜底
         for key2, cnt in two_key_count.items():
@@ -313,10 +356,22 @@ def write_orders(filepath, orders, export_dir=None, ignored_orders=None):
     pythoncom.CoInitialize()
     wps = None
     wb = None
+    _wps_pid = None  # 记录本次启动的WPS进程PID，用于兜底清理
     try:
         wps = win32com.client.Dispatch('Ket.Application')
         wps.Visible = False
         wps.DisplayAlerts = False
+        # 记录WPS进程PID（通过COM的ProcessId或hwnd反查）
+        try:
+            import ctypes
+            hwnd = int(wps.Hwnd) if hasattr(wps, 'Hwnd') else 0
+            if hwnd:
+                pid = ctypes.c_ulong(0)
+                ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                _wps_pid = pid.value
+                logging.info(f'[总排期] WPS COM进程PID={_wps_pid}')
+        except:
+            pass
         wb = wps.Workbooks.Open(filepath)
 
         # 检查ReadOnly — 被锁则立即退出
@@ -339,9 +394,18 @@ def write_orders(filepath, orders, export_dir=None, ignored_orders=None):
         new_rows = []    # 新单数据收集（不写入Z盘，生成到独立Excel）
         mod_details = [] # 修改单明细
         warnings = []    # 警告信息
+        _used_rows = set()  # 已被精确匹配占用的行号，防止二元组兜底重复命中
         new_details = [] # 新单明细
 
-        for order in orders:
+        _batch_size = 20  # 每20个PO保存一次，防止COM长时间操作崩溃
+        for _order_idx, order in enumerate(orders):
+            # 分批保存：每处理20个PO保存一次
+            if _order_idx > 0 and _order_idx % _batch_size == 0 and mod_count > 0:
+                try:
+                    wb.Save()
+                    logging.info(f'[总排期] 分批保存: 已处理{_order_idx}/{len(orders)}个PO, 修改{mod_count}行')
+                except Exception as _save_e:
+                    logging.warning(f'[总排期] 分批保存失败: {_save_e}')
             header = order.get('header') or order
             po = _normalize_po(header.get('po_number', '') or order.get('po_number', ''))
             po_date = header.get('po_date', '') or order.get('po_date', '')
@@ -411,12 +475,12 @@ def write_orders(filepath, orders, export_dir=None, ignored_orders=None):
                 else:
                     total_ctns = ln.get('total_ctns', 0) or 0
 
-                # 金额：卡板/混装=总箱×单价，普通=数量×单价
-                if is_pallet and pallet_count > 0:
+                # 金额：卡板/混装/M开头=总箱×单价，普通=数量×单价
+                _m_prefix = str(sku_spec).strip().upper().startswith('M')
+                if (is_pallet and pallet_count > 0) or (is_mixed and carton_count > 0) or _m_prefix:
                     total_usd = total_ctns * price
-                elif is_mixed and carton_count > 0:
-                    total_usd = total_ctns * price
-                    logging.info(f'[混装金额] {sku_spec}: {total_ctns}*{price}={total_usd}')
+                    if _m_prefix and not is_mixed:
+                        logging.info(f'[M开头金额] {sku_spec}: {total_ctns}*{price}={total_usd}')
                 else:
                     total_usd = qty * price
 
@@ -434,12 +498,35 @@ def write_orders(filepath, orders, export_dir=None, ignored_orders=None):
                 f_sku = f"{po}-{line_no}" if po and line_no else ''
                 item_upper = re.sub(r'[\s\n]+', '', str(sku_spec)).strip().upper()
 
-                # 索引查找：先三元组，再二元组兜底
+                # 索引查找：先三元组，再二元组，最后截取到-S00x兜底
+                _matched_by = ''
                 existing_row = index.get((po, item_upper, f_sku))
+                if existing_row:
+                    _matched_by = '三元组'
                 if not existing_row:
                     existing_row = index.get((po, item_upper))
+                    if existing_row:
+                        _matched_by = '二元组'
+                if not existing_row:
+                    # 第三层兜底：货号可能粘连了产品描述（如77889SLT-S001-PRODBC）
+                    # 截取到 -S00x 部分再匹配
+                    _trunc = re.match(r'(.+-S\d+)', item_upper)
+                    if _trunc:
+                        _item_trunc = _trunc.group(1)
+                        existing_row = index.get((po, _item_trunc))
+                        if existing_row:
+                            _matched_by = '基础码兜底'
+                            logging.info(f'[索引匹配] 基础码兜底: {item_upper} -> {_item_trunc}')
+                # 防重复占用：非三元组匹配命中已被占用的行时，视为新单
+                if existing_row and _matched_by != '三元组' and existing_row in _used_rows:
+                    logging.info(f'[索引匹配] {_matched_by}命中row={existing_row}已被占用，视为新单: '
+                                 f'po={po} item={item_upper} f_sku={f_sku}')
+                    existing_row = None
+                # 记录占用
+                if existing_row:
+                    _used_rows.add(existing_row)
                 logging.info(f'[索引匹配] po={po} item={item_upper} f_sku={f_sku} '
-                             f'-> row={existing_row or "未找到(新单)"}')
+                             f'-> row={existing_row or "未找到(新单)"} ({_matched_by})')
 
                 if existing_row:
                     # ========== 修改单 ==========
@@ -459,8 +546,9 @@ def write_orders(filepath, orders, export_dir=None, ignored_orders=None):
                         updates.append((COL['insp_date'], _date_serial(insp_dt)))
                     if price:
                         updates.append((COL['price'], round(price, 4)))
-                    # 金额：卡板=总箱×单价，普通=数量×单价
-                    if is_pallet and pallet_count > 0:
+                    # 金额：卡板/混装/M开头=总箱×单价，普通=数量×单价
+                    _m_prefix = str(sku_spec).strip().upper().startswith('M')
+                    if (is_pallet and pallet_count > 0) or (is_mixed and carton_count > 0) or _m_prefix:
                         updates.append((COL['amount'], f'=RC{COL["total_box"]}*RC{COL["price"]}', True))
                     else:
                         updates.append((COL['amount'], f'=RC{COL["qty"]}*RC{COL["price"]}', True))
@@ -540,7 +628,7 @@ def write_orders(filepath, orders, export_dir=None, ignored_orders=None):
                         logging.info(f'[总排期修改] row={r} PO={po} SKU={sku_spec} 变化: {", ".join(changed_fields)}')
                 else:
                     # ========== 新单 → 收集到列表（不写入Z盘）==========
-                    cn_name = cn_names.get(_item_base(sku_spec), '')
+                    cn_name = _lookup_cn(cn_names, sku_spec)
                     # 接单日期转datetime
                     po_date_dt = None
                     if po_date:
@@ -604,7 +692,7 @@ def write_orders(filepath, orders, export_dir=None, ignored_orders=None):
                     ignored_rows.append({
                         'po_date': _po_date_dt, 'customer': _customer, 'dest': _dest,
                         'po': _po, 'cpo': _cpo, 'sku_line': _f_sku,
-                        'item': _sku, 'cn_name': cn_names.get(_item_base(_sku), ''),
+                        'item': _sku, 'cn_name': _lookup_cn(cn_names, _sku),
                         'qty': _qty, 'inner': _inner, 'outer': _outer,
                         'total_box': '__FORMULA_TOTAL_BOX__',
                         'ship_date': _ship_dt, 'insp_date': _calc_inspection(_ship_dt, _sku),
@@ -644,6 +732,15 @@ def write_orders(filepath, orders, export_dir=None, ignored_orders=None):
                 wps.Quit()
         except:
             pass
+        # 兜底：杀掉本次COM启动的WPS进程（只杀自己的，不影响用户打开的WPS）
+        if _wps_pid:
+            try:
+                import subprocess
+                subprocess.run(['taskkill', '/PID', str(_wps_pid), '/F'],
+                               capture_output=True, timeout=5)
+                logging.info(f'[总排期] 兜底清理WPS PID={_wps_pid}')
+            except:
+                pass
         pythoncom.CoUninitialize()
 
 
@@ -823,7 +920,7 @@ def generate_excel(orders, output_dir):
         if os.path.exists(cn_path):
             with open(cn_path, 'r', encoding='utf-8') as f:
                 raw = json.load(f)
-            cn_map = {k: v.get('cn_name', '') if isinstance(v, dict) else str(v)
+            cn_map = {k.upper(): v.get('cn_name', '') if isinstance(v, dict) else str(v)
                       for k, v in raw.items() if not k.startswith('_')}
     except Exception:
         pass
@@ -909,8 +1006,9 @@ def generate_excel(orders, output_dir):
             else:
                 total_ctns = ln.get('total_ctns', 0) or 0
 
-            # 金额
-            if (is_pallet and pallet_count > 0) or (is_mixed and carton_count > 0):
+            # 金额：卡板/混装/M开头=总箱×单价，普通=数量×单价
+            _m_prefix = str(sku_spec).strip().upper().startswith('M')
+            if (is_pallet and pallet_count > 0) or (is_mixed and carton_count > 0) or _m_prefix:
                 total_usd = total_ctns * price
             else:
                 total_usd = qty * price
@@ -928,7 +1026,7 @@ def generate_excel(orders, output_dir):
             insp_dt = _calc_inspection(line_ship_dt, sku_spec)
 
             f_sku = f"{po}-{line_no}" if po and line_no else ''
-            cn_name = cn_map.get(_item_base(sku_spec), '')
+            cn_name = _lookup_cn(cn_map, sku_spec)
 
             # 接单日期转datetime
             po_date_dt = None

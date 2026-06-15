@@ -717,8 +717,8 @@ class ExcelPOParser:
         sections = {}  # label -> [content lines]
 
         for row in ws.iter_rows(max_row=600):
-            # A列标签
-            a_val = str(row[0].value or '').strip() if row else ''
+            # A列标签（规范化：多个连续空格合并为单个，兼容Excel双空格如"Tracking  Code:"）
+            a_val = re.sub(r'\s+', ' ', str(row[0].value or '')).strip() if row else ''
 
             # 停止：遇到 Order Modifiable Records
             if 'Order Modifiable' in a_val:

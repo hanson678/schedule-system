@@ -25,6 +25,21 @@
                     <input type="number" class="form-control" id="retry-interval"
                            value="{{ config.get('retry_interval', 180) }}" min="30" max="600">
                 </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">被锁文件重试间隔</label>
+                    <div class="input-group" style="width:180px;">
+                        <input type="number" id="retryIntervalInput" class="form-control"
+                               min="1" max="60" value="{{ config.get('retry_interval_min', 5) }}">
+                        <span class="input-group-text">分钟</span>
+                    </div>
+                    <div class="form-text">排期文件被占用时，每隔此时间自动重试一次</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">服务端口</label>
+                    <input type="number" class="form-control" id="app-port"
+                           value="{{ config.get('port', 5000) }}" min="1024" max="65535">
+                    <small class="text-muted">修改后需重启系统才能生效</small>
+                </div>
                 <button class="btn btn-primary" onclick="saveConfig()">
                     <i class="bi bi-check-lg me-1"></i>保存基本设置
                 </button>
@@ -191,6 +206,8 @@ async function saveConfig() {
                 z_drive_path: document.getElementById('z-path').value.trim(),
                 default_person: document.getElementById('default-person').value.trim(),
                 retry_interval: parseInt(document.getElementById('retry-interval').value) || 180,
+                port: parseInt(document.getElementById('app-port').value) || 5000,
+                retry_interval_min: parseInt(document.getElementById('retryIntervalInput')?.value || '5'),
             }
         });
         App.alert('基本设置已保存');

@@ -30,10 +30,10 @@
         <div class="d-flex align-items-center justify-content-center gap-2 mt-1">
             <input type="text" id="masterPath" class="form-control form-control-sm" style="max-width:450px;font-size:0.8rem;" readonly>
             <button class="btn btn-outline-primary btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;" onclick="openFileBrowser()">选择总排期</button>
-            <button class="btn btn-outline-success btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;" onclick="document.getElementById('masterFileInput').click()"><i class="bi bi-upload"></i> 上传总排期</button>
-            <input type="file" id="masterFileInput" accept=".xlsx,.xls" style="display:none" onchange="uploadMasterFile(this)">
             <button class="btn btn-outline-secondary btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;" onclick="resetPath()">恢复默认</button>
             <button class="btn btn-outline-info btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;" onclick="checkStatus()"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
+            <button class="btn btn-outline-danger btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;" onclick="openBlacklist()"><i class="bi bi-slash-circle"></i> 黑名单</button>
+            <button class="btn btn-outline-purple btn-sm py-0" style="font-size:0.75rem;white-space:nowrap;color:#7952b3;border-color:#7952b3;" onclick="openDualMap()"><i class="bi bi-diagram-2"></i> 双排期</button>
             <span id="file-status" class="badge bg-secondary small">检查中...</span>
         </div>
     </div>
@@ -99,7 +99,14 @@ dropZone.addEventListener('drop', e => {
     e.preventDefault();
     dropZone.classList.remove('dragover');
     const files = [...e.dataTransfer.files].filter(f => f.name.match(/\.xlsx?$/i));
-    if (files.length) { selectedFiles = files; showFiles(files); }
+    if (files.length) {
+        selectedFiles = files;
+        showFiles(files);
+        const names = files.map(f => f.name).join('\n');
+        if (confirm(`即将写入以下 ${files.length} 个PO文件：\n${names}\n\n确认写入总排期？`)) {
+            doUpload();
+        }
+    }
 });
 
 function showFiles(files) {
@@ -319,25 +326,6 @@ async function doDownloadSummary() {
     }
 }
 
-async function uploadMasterFile(input) {
-    if (!input.files.length) return;
-    const file = input.files[0];
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-        const resp = await fetch('/api/master-schedule-upload-file', {method:'POST', body: fd});
-        const data = await resp.json();
-        if (data.ok) {
-            alert(data.msg);
-            checkStatus();
-        } else {
-            alert(data.error || '上传失败');
-        }
-    } catch(e) {
-        alert('上传失败: ' + e.message);
-    }
-    input.value = '';
-}
 
 async function checkStatus() {
     try {
@@ -438,6 +426,168 @@ setInterval(checkStatus, 30000);
     </div>
   </div>
 </div>
+
+<!-- 黑名单管理模态框 -->
+<div class="modal fade" id="blacklistModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title"><i class="bi bi-slash-circle text-danger me-1"></i>黑名单管理（不入总排期的货号）</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input type="text" id="blNewItem" class="form-control form-control-sm" placeholder="输入货号数字前缀，如 77937" onkeydown="if(event.key==='Enter')addBlItem()">
+          <button class="btn btn-outline-success btn-sm" onclick="addBlItem()"><i class="bi bi-plus-lg"></i> 添加</button>
+        </div>
+        <div id="blList" style="max-height:350px;overflow-y:auto;"></div>
+        <div class="text-muted small mt-2"><i class="bi bi-info-circle me-1"></i>按货号开头数字匹配，如 77937 会匹配 77937-S001 等所有规格</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let _blItems = [];
+function openBlacklist() {
+    fetch('/api/ignore-items').then(r=>r.json()).then(data => {
+        _blItems = data.items || [];
+        renderBlList();
+        new bootstrap.Modal(document.getElementById('blacklistModal')).show();
+    });
+}
+function renderBlList() {
+    const el = document.getElementById('blList');
+    if (!_blItems.length) { el.innerHTML = '<div class="text-muted text-center py-3">暂无黑名单</div>'; return; }
+    el.innerHTML = _blItems.map((item, i) =>
+        `<div class="d-flex align-items-center justify-content-between py-1 px-2 border-bottom">
+            <span class="fw-bold" style="font-size:0.9rem;">${_escHtml(item)}</span>
+            <button class="btn btn-outline-danger btn-sm py-0 px-1" style="font-size:0.7rem;" onclick="removeBlItem(${i})"><i class="bi bi-x-lg"></i></button>
+        </div>`
+    ).join('');
+}
+function addBlItem() {
+    const input = document.getElementById('blNewItem');
+    const v = input.value.trim();
+    if (!v) return;
+    if (!/^\d+$/.test(v)) { alert('请输入纯数字货号前缀'); return; }
+    if (_blItems.includes(v)) { alert('已在黑名单中'); return; }
+    _blItems.push(v);
+    saveBlItems();
+    input.value = '';
+}
+function removeBlItem(i) {
+    const item = _blItems[i];
+    if (!confirm(`确定删除 ${item}？`)) return;
+    _blItems.splice(i, 1);
+    saveBlItems();
+}
+function saveBlItems() {
+    fetch('/api/ignore-items', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({items: _blItems})})
+    .then(r=>r.json()).then(data => {
+        if (data.ok) { _blItems = data.items; renderBlList(); }
+        else alert('保存失败: ' + (data.error||''));
+    });
+}
+</script>
+
+<!-- 双排期映射模态框 -->
+<div class="modal fade" id="dualMapModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title"><i class="bi bi-diagram-2 me-1" style="color:#7952b3;"></i>双排期映射管理（一行拆多行入单）</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="card mb-3 border-0 bg-light">
+          <div class="card-body py-2">
+            <div class="row g-2 align-items-end">
+              <div class="col-3">
+                <label class="form-label small mb-0">货号前缀</label>
+                <input type="text" id="dmNum" class="form-control form-control-sm" placeholder="如 77937">
+              </div>
+              <div class="col-4">
+                <label class="form-label small mb-0">目标系列（逗号分隔）</label>
+                <input type="text" id="dmTargets" class="form-control form-control-sm" placeholder="如 77673,77711">
+              </div>
+              <div class="col-3">
+                <label class="form-label small mb-0">插入模式</label>
+                <select id="dmMode" class="form-select form-select-sm">
+                  <option value="mid_insert">mid_insert (S00x后插入尾缀前)</option>
+                  <option value="s_insert">s_insert (S00x前插入)</option>
+                  <option value="slt_insert">slt_insert (SLT后插入)</option>
+                  <option value="append">append (末尾追加)</option>
+                  <option value="none">none (不改货号)</option>
+                </select>
+              </div>
+              <div class="col-2">
+                <button class="btn btn-outline-success btn-sm w-100" onclick="addDmItem()"><i class="bi bi-plus-lg"></i> 添加</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="dmList" style="max-height:350px;overflow-y:auto;"></div>
+        <div class="text-muted small mt-2">
+          <i class="bi bi-info-circle me-1"></i>例：77785 + targets[77673,77711] + mid_insert → 77785-S001-INT 拆为 77785-S001-<b>77673</b>-INT 和 77785-S001-<b>77711</b>-INT
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let _dmItems = {};
+function openDualMap() {
+    fetch('/api/dual-map').then(r=>r.json()).then(data => {
+        _dmItems = data.items || {};
+        renderDmList();
+        new bootstrap.Modal(document.getElementById('dualMapModal')).show();
+    });
+}
+function renderDmList() {
+    const el = document.getElementById('dmList');
+    const keys = Object.keys(_dmItems);
+    if (!keys.length) { el.innerHTML = '<div class="text-muted text-center py-3">暂无映射</div>'; return; }
+    el.innerHTML = '<table class="table table-sm table-bordered mb-0"><thead><tr><th>货号</th><th>目标系列</th><th>模式</th><th style="width:50px;"></th></tr></thead><tbody>' +
+        keys.sort().map(k => {
+            const v = _dmItems[k];
+            return `<tr>
+                <td class="fw-bold">${_escHtml(k)}</td>
+                <td>${_escHtml((v.targets||[]).join(', '))}</td>
+                <td><code>${_escHtml(v.mode||'')}</code></td>
+                <td><button class="btn btn-outline-danger btn-sm py-0 px-1" style="font-size:0.7rem;" onclick="removeDmItem('${_escHtml(k)}')"><i class="bi bi-x-lg"></i></button></td>
+            </tr>`;
+        }).join('') + '</tbody></table>';
+}
+function addDmItem() {
+    const num = document.getElementById('dmNum').value.trim();
+    const targets = document.getElementById('dmTargets').value.trim();
+    const mode = document.getElementById('dmMode').value;
+    if (!num) { alert('请输入货号前缀'); return; }
+    if (!/^\d+$/.test(num)) { alert('货号前缀必须是纯数字'); return; }
+    if (!targets) { alert('请输入目标系列'); return; }
+    const tarr = targets.split(/[,，\s]+/).map(s=>s.trim()).filter(Boolean);
+    if (!tarr.length) { alert('目标系列不能为空'); return; }
+    if (_dmItems[num] && !confirm(`${num} 已存在，是否覆盖？`)) return;
+    _dmItems[num] = {targets: tarr, mode: mode};
+    saveDmItems();
+    document.getElementById('dmNum').value = '';
+    document.getElementById('dmTargets').value = '';
+}
+function removeDmItem(k) {
+    if (!confirm(`确定删除 ${k} 的映射？`)) return;
+    delete _dmItems[k];
+    saveDmItems();
+}
+function saveDmItems() {
+    fetch('/api/dual-map', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({items: _dmItems})})
+    .then(r=>r.json()).then(data => {
+        if (data.ok) renderDmList();
+        else alert('保存失败: ' + (data.error||''));
+    });
+}
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>

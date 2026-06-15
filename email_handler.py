@@ -7,6 +7,7 @@ import imaplib
 import tempfile
 from datetime import datetime, timedelta
 from email.header import decode_header
+from base_path import get_app_dir
 
 
 class EmailHandler:
@@ -17,7 +18,7 @@ class EmailHandler:
         self.email_account = config.get('email_account', '')
         self.email_password = config.get('email_password', '')
         self.foxmail_path = config.get('foxmail_path', '')
-        self.upload_dir = os.path.join(os.path.dirname(__file__), 'uploads')
+        self.upload_dir = os.path.join(get_app_dir(), 'uploads')
         os.makedirs(self.upload_dir, exist_ok=True)
 
     def fetch_recent_po_emails(self, days=3):
